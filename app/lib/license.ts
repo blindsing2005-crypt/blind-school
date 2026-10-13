@@ -103,11 +103,6 @@ function hashString(s: string): string {
 }
 
 /* ---------- Calcule la date d'expiration à partir d'une durée en mois ---------- */
-/**
- * Retourne la fin du mois atteint à (aujourd'hui + N mois).
- * Ex : aujourd'hui = 15 mars 2026, durée = 3 mois
- *      → fin juin 2026 (30/06/2026 à 23:59:59)
- */
 export function computeExpiryFromMonths(months: number): {
   year: number;
   month: number;
@@ -224,7 +219,6 @@ export function useLicense(): {
     if (!result.valid || !result.expiresAt) {
       return { success: false, message: 'Code invalide. Vérifiez et réessayez.' };
     }
-    // Si déjà payé et que la nouvelle date est plus lointaine → on prolonge
     const currentPaid = license.paidUntil ? new Date(license.paidUntil).getTime() : 0;
     const newPaid = new Date(result.expiresAt).getTime();
     const finalPaid = Math.max(currentPaid, newPaid);

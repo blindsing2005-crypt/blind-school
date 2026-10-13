@@ -243,9 +243,12 @@ export const useSchoolSettings = () => {
   // Migration : ancien format (amount unique) → nouveau format (3 montants)
   useEffect(() => {
     if (!settings.tranches || settings.tranches.length === 0) return;
-    const needsMigration = settings.tranches.some(
-  (t) => (t as unknown as { amountMaternelle?: number; amount?: number }).amountMaternelle === undefined,
-);
+        const needsMigration = settings.tranches.some(
+      (t) => {
+        const legacy = t as unknown as { amountMaternelle?: number; amount?: number };
+        return legacy.amountMaternelle === undefined;
+      },
+    );
     if (!needsMigration) return;
     setSettings((s) => ({
       ...s,
