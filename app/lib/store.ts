@@ -244,8 +244,8 @@ export const useSchoolSettings = () => {
   useEffect(() => {
     if (!settings.tranches || settings.tranches.length === 0) return;
     const needsMigration = settings.tranches.some(
-      (t) => (t as unknown as { amount?: number }).amountMaternelle === undefined,
-    );
+  (t) => (t as unknown as { amountMaternelle?: number; amount?: number }).amountMaternelle === undefined,
+);
     if (!needsMigration) return;
     setSettings((s) => ({
       ...s,

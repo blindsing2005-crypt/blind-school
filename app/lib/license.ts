@@ -190,7 +190,7 @@ export function useLicenseHistory() {
 export function useLicense(): {
   status: LicenseStatus | null;
   license: License | null;
-  setLicense: (v: License | ((p: License) => License)) => void;
+  setLicense: (v: License | null | ((p: License | null) => License | null)) => void;
   unlock: (code: string) => { success: boolean; message: string };
 } {
   const [license, setLicense] = usePersistentState<License | null>(LICENSE_KEY, null);
