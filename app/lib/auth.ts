@@ -19,7 +19,6 @@ export type Permission =
   | 'parametres.view' | 'parametres.edit'
   | 'utilisateurs.view' | 'utilisateurs.manage';
 
-/** Liste lisible des permissions (pour l'UI) */
 export const PERMISSION_LABELS: { perm: Permission; label: string; group: string }[] = [
   { perm: 'dashboard.view',      label: 'Voir le tableau de bord',       group: 'Général' },
   { perm: 'eleves.view',         label: 'Voir les élèves',               group: 'Élèves' },
@@ -45,7 +44,6 @@ export const PERMISSION_LABELS: { perm: Permission; label: string; group: string
   { perm: 'utilisateurs.manage', label: 'Gérer les utilisateurs',        group: 'Utilisateurs' },
 ];
 
-/** Permissions accordées par défaut selon le rôle */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   Administrateur: PERMISSION_LABELS.map((p) => p.perm),
   Comptable: [
@@ -82,6 +80,8 @@ export interface UserAccount {
   customPermissions: Permission[] | null;
   resetCode: string | null;
   resetCodeExpiry: string | null;
+  /** 🆕 Classes et options assignées (ex : ["2ème A", "2ème B"]) */
+  assignedClasses: string[];
 }
 
 export interface Session {
@@ -104,7 +104,7 @@ export async function hashPassword(pwd: string): Promise<string> {
   return arr.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/* ---------- Génération code de secours global ---------- */
+/* ---------- Code de secours ---------- */
 export function generateRecoveryCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let raw = '';
@@ -114,7 +114,6 @@ export function generateRecoveryCode(): string {
   return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
 }
 
-/* ---------- Génération code de réinitialisation (6 chiffres) ---------- */
 export function generateResetCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
@@ -164,7 +163,7 @@ export const useSession = () =>
 export const useRecoveryCode = () =>
   usePersistentState<string | null>(RECOVERY_KEY, null);
 
-/* ---------- Initialisation ---------- */
+/* ---------- Init ---------- */
 export async function ensureDefaultAdmin(
   users: UserAccount[],
   recoveryCode: string | null,
@@ -188,6 +187,7 @@ export async function ensureDefaultAdmin(
         customPermissions: null,
         resetCode: null,
         resetCodeExpiry: null,
+        assignedClasses: [],
       },
     ];
   }
@@ -197,7 +197,7 @@ export async function ensureDefaultAdmin(
   return { users: updatedUsers, recoveryCode: updatedCode };
 }
 
-/* ---------- Vérification login ---------- */
+/* ---------- Login ---------- */
 export async function verifyLogin(
   users: UserAccount[],
   username: string,
@@ -211,7 +211,7 @@ export async function verifyLogin(
   return hash === user.passwordHash ? user : null;
 }
 
-/* ---------- Vérification code de secours global ---------- */
+/* ---------- Code de secours ---------- */
 export function checkRecoveryCode(
   stored: string | null,
   entered: string,
@@ -221,16 +221,12 @@ export function checkRecoveryCode(
   return clean(stored) === clean(entered);
 }
 
-/* ============================================================
-   PERMISSIONS EFFECTIVES D'UN UTILISATEUR
-   ============================================================ */
+/* ---------- Permissions ---------- */
 export function getUserPermissions(user: UserAccount | null): Permission[] {
   if (!user) return [];
-  // L'admin garde toujours TOUTES les permissions (pour éviter l'auto-blocage)
   if (user.role === 'Administrateur' && user.customPermissions === null) {
     return ROLE_PERMISSIONS.Administrateur;
   }
-  // Si l'admin a personnalisé ses propres permissions, elles s'appliquent
   if (user.customPermissions !== null) return user.customPermissions;
   return ROLE_PERMISSIONS[user.role];
 }
@@ -242,9 +238,7 @@ export function hasPermission(session: Session | null, perm: Permission, users: 
   return getUserPermissions(user).includes(perm);
 }
 
-/* ============================================================
-   HOOK PRATIQUE (corrigé : ne bloque plus au premier rendu)
-   ============================================================ */
+/* ---------- Hook principal ---------- */
 export function useAuth() {
   const [session, setSession] = useSession();
   const [users] = useUsers();
@@ -263,8 +257,6 @@ export function useAuth() {
     isAuthenticated: !!session,
     isLoading: !!session && !usersLoaded,
     can: (perm: Permission) => {
-      // ⚠️ Si une session existe mais que les users ne sont pas encore chargés,
-      // on autorise temporairement (le filtrage réel se fera au prochain rendu).
       if (session && !usersLoaded) return true;
       return permissions.includes(perm);
     },
@@ -273,12 +265,7 @@ export function useAuth() {
   };
 }
 
-/* ============================================================
-   RÉINITIALISATION PAR EMAIL (ou par identifiant)
-   ⚠️ Sans backend, le code s'affiche à l'écran au lieu d'être envoyé.
-   ============================================================ */
-
-/** Étape 1 : l'utilisateur demande une réinitialisation */
+/* ---------- Reset ---------- */
 export function requestReset(
   users: UserAccount[],
   identifier: string,
@@ -293,11 +280,10 @@ export function requestReset(
   if (!user.active) return { error: 'Ce compte est désactivé.' };
 
   const code = generateResetCode();
-  const expiry = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 minutes
+  const expiry = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   return { user, code };
 }
 
-/** Étape 2 : l'utilisateur entre le code reçu + son nouveau mot de passe */
 export async function verifyResetCode(
   user: UserAccount,
   enteredCode: string,

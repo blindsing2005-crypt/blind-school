@@ -12,7 +12,7 @@ const NAV: { href: string; label: string; icon: string; perm: Permission }[] = [
   { href: '/paiements', label: 'Paiements & Minerval', icon: '💳', perm: 'paiements.view' },
   { href: '/rapports', label: 'Rapports financiers', icon: '💰', perm: 'rapports.view' },
   { href: '/personnel', label: 'Personnel & Enseignants', icon: '👨‍🏫', perm: 'personnel.view' },
-  { href: '/bulletins', label: 'Bulletins & Notes', icon: '📄', perm: 'bulletin.view' as Permission },
+  { href: '/bulletins', label: 'Bulletins & Notes', icon: '📄', perm: 'bulletins.view' },
   { href: '/vie-scolaire', label: 'Vie scolaire', icon: '📅', perm: 'vie.view' },
   { href: '/parametres', label: 'Configuration', icon: '⚙️', perm: 'parametres.view' },
   { href: '/utilisateurs', label: 'Utilisateurs & Rôles', icon: '🔐', perm: 'utilisateurs.view' },
@@ -36,7 +36,6 @@ export default function Sidebar() {
     setAnneeScolaire(`${y} – ${y + 1}`);
   }, []);
 
-  /* Info licence */
   const [licenseInfo, setLicenseInfo] = useState<{
     daysLeft: number;
     isExpired: boolean;
@@ -66,7 +65,7 @@ export default function Sidebar() {
   if (path === '/login' || path === '/licence') return null;
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-b border-slate-200 bg-white lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
       <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-5">
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -121,7 +120,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Badge licence bien visible */}
       {licenseInfo && (
         <div className="border-t border-slate-200 p-3">
           <Link

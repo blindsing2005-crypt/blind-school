@@ -29,6 +29,7 @@ type FormState = {
   sexe: 'M' | 'F';
   dateNaissance: string; lieuNaissance: string;
   nomParent: string; telephoneParent: string; adresse: string;
+  ecoleProvenance: string; professionResponsable: string;
   niveau: Niveau | ''; classe: string; option: string; dateInscription: string;
   statut: StudentStatus;
 };
@@ -39,6 +40,7 @@ const emptyForm: FormState = {
   nom: '', postnom: '', prenom: '', sexe: 'M',
   dateNaissance: '', lieuNaissance: '',
   nomParent: '', telephoneParent: '', adresse: '',
+  ecoleProvenance: '', professionResponsable: '',
   niveau: '', classe: '', option: '', dateInscription: today(),
   statut: 'Actif',
 };
@@ -74,12 +76,8 @@ export default function ElevesPage() {
     return () => clearTimeout(t);
   }, [message]);
 
-  /* ============================================================
-     Filtrage par année scolaire
-     ============================================================ */
   const activeYearId = activeYear?.id || '';
 
-  // Élèves de l'année active (ou non assignés si aucune année)
   const activeStudents = useMemo(() => {
     return students.filter((s) => {
       if (!activeYearId) return true;
@@ -87,24 +85,17 @@ export default function ElevesPage() {
     });
   }, [students, activeYearId]);
 
-  // Élèves des années passées, non réinscrits dans l'année active
   const pastStudentsToReinscrire = useMemo(() => {
     if (!activeYearId) return [];
-    // Récupère les matricules déjà présents dans l'année active
     const matActifs = new Set(activeStudents.map((s) => s.matricule));
-    // Élèves des autres années, pas diplômés, pas abandonnés/expulsés
     return students
       .filter((s) => s.anneeScolaireId && s.anneeScolaireId !== activeYearId)
       .filter((s) => !matActifs.has(s.matricule))
       .filter((s) => s.statut === 'Actif' || s.statut === 'Redoublant')
-      // Ne garde que la plus récente inscription par matricule
       .sort((a, b) => (b.dateInscription || '').localeCompare(a.dateInscription || ''))
       .filter((s, i, arr) => arr.findIndex((x) => x.matricule === s.matricule) === i);
   }, [students, activeStudents, activeYearId]);
 
-  /* ============================================================
-     Formulaire nouvelle inscription
-     ============================================================ */
   const classesDisponibles = form.niveau ? CLASSES[form.niveau] : [];
   const besoinOption = form.classe ? classeAvecOption(form.classe) : false;
 
@@ -136,6 +127,8 @@ export default function ElevesPage() {
       dateNaissance: form.dateNaissance, lieuNaissance: form.lieuNaissance.trim(),
       nomParent: form.nomParent.trim(), telephoneParent: form.telephoneParent.trim(),
       adresse: form.adresse.trim(),
+      ecoleProvenance: form.ecoleProvenance.trim(),
+      professionResponsable: form.professionResponsable.trim(),
       niveau: form.niveau as Niveau, classe: form.classe, option: form.option,
       dateInscription: form.dateInscription,
       statut: form.statut,
@@ -147,9 +140,6 @@ export default function ElevesPage() {
     setTab('liste');
   };
 
-  /* ============================================================
-     Filtres liste
-     ============================================================ */
   const classesFiltre = fNiveau ? CLASSES[fNiveau] : Object.values(CLASSES).flat();
   const optionFiltreDispo = fClasse ? classeAvecOption(fClasse) : false;
 
@@ -184,7 +174,7 @@ export default function ElevesPage() {
   }, [activeStudents]);
 
   const supprimer = (id: string) => {
-    if (!confirm('Supprimer définitivement cet élève ? (Préférez le statut « Abandonné » pour garder l\'historique)')) return;
+    if (!confirm('Supprimer définitivement cet élève ?')) return;
     setStudents((s) => s.filter((x) => x.id !== id));
   };
 
@@ -194,9 +184,6 @@ export default function ElevesPage() {
     setMessage({ type: 'success', text: `Statut mis à jour : ${statut}` });
   };
 
-  /* ============================================================
-     Impression
-     ============================================================ */
   const printColumns = useMemo(() => [
     { key: 'num', label: 'N°', width: '6%', align: 'center' as const },
     { key: 'matricule', label: 'Matricule', width: '14%' },
@@ -240,10 +227,9 @@ export default function ElevesPage() {
         </p>
       </header>
 
-      {/* Alerte si pas d'année active */}
       {!activeYear && (
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ⚠️ <b>Aucune année scolaire active.</b> Allez dans <b>Configuration → 📅 Année scolaire</b> pour en créer une avant d&apos;inscrire des élèves.
+          ⚠️ <b>Aucune année scolaire active.</b> Le bouton d&apos;inscription est désactivé tant qu&apos;aucune année n&apos;est active. Allez dans <b>Configuration → 📅 Année scolaire</b>.
         </div>
       )}
 
@@ -283,7 +269,6 @@ export default function ElevesPage() {
         </TabBtn>
       </div>
 
-      {/* ============ TAB LISTE ============ */}
       {tab === 'liste' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-5">
@@ -319,8 +304,6 @@ export default function ElevesPage() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-slate-600">
               <span className="font-semibold text-slate-900">{filtered.length}</span> élève(s)
-              {fClasse && <span className="ml-1 text-slate-500">— {fClasse}{fOption ? ` • ${fOption}` : ''}</span>}
-              {fStatut && <span className="ml-1 text-slate-500">— {fStatut}</span>}
             </p>
             <div className="flex gap-2">
               {(fNiveau || fClasse || fOption || fStatut || search) && (
@@ -403,7 +386,6 @@ export default function ElevesPage() {
         </div>
       )}
 
-      {/* ============ TAB INSCRIPTION ============ */}
       {tab === 'inscription' && (
         <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div>
@@ -412,13 +394,13 @@ export default function ElevesPage() {
             </h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Field label="Nom" required>
-                <input className={inputCls} value={form.nom} onChange={(e) => updateForm({ nom: e.target.value })} placeholder="Ex : KABILA" />
+                <input className={inputCls} value={form.nom} onChange={(e) => updateForm({ nom: e.target.value })} placeholder="Ex : NDOBOLA" />
               </Field>
               <Field label="Postnom">
-                <input className={inputCls} value={form.postnom} onChange={(e) => updateForm({ postnom: e.target.value })} placeholder="Ex : MUTOMBO" />
+                <input className={inputCls} value={form.postnom} onChange={(e) => updateForm({ postnom: e.target.value })} placeholder="Ex : KABEYA" />
               </Field>
               <Field label="Prénom" required>
-                <input className={inputCls} value={form.prenom} onChange={(e) => updateForm({ prenom: e.target.value })} placeholder="Ex : Jean" />
+                <input className={inputCls} value={form.prenom} onChange={(e) => updateForm({ prenom: e.target.value })} placeholder="Ex : Bel ange" />
               </Field>
               <Field label="Sexe">
                 <select className={inputCls} value={form.sexe} onChange={(e) => updateForm({ sexe: e.target.value as 'M' | 'F' })}>
@@ -432,6 +414,9 @@ export default function ElevesPage() {
               <Field label="Lieu de naissance">
                 <input className={inputCls} value={form.lieuNaissance} onChange={(e) => updateForm({ lieuNaissance: e.target.value })} placeholder="Ex : Kinshasa" />
               </Field>
+              <Field label="École de provenance">
+                <input className={inputCls} value={form.ecoleProvenance} onChange={(e) => updateForm({ ecoleProvenance: e.target.value })} placeholder="Ex : C.S La gloire de Dieu" />
+              </Field>
             </div>
           </div>
 
@@ -439,15 +424,18 @@ export default function ElevesPage() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
               Parent / Tuteur
             </h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Field label="Nom complet du parent">
-                <input className={inputCls} value={form.nomParent} onChange={(e) => updateForm({ nomParent: e.target.value })} placeholder="Ex : KABILA MUTOMBO" />
+                <input className={inputCls} value={form.nomParent} onChange={(e) => updateForm({ nomParent: e.target.value })} placeholder="Ex : AMISI FATAKI" />
+              </Field>
+              <Field label="Profession du responsable">
+                <input className={inputCls} value={form.professionResponsable} onChange={(e) => updateForm({ professionResponsable: e.target.value })} placeholder="Ex : Enseignant, Commerçant…" />
               </Field>
               <Field label="Téléphone">
                 <input className={inputCls} value={form.telephoneParent} onChange={(e) => updateForm({ telephoneParent: e.target.value })} placeholder="+243 8XX XXX XXX" />
               </Field>
               <Field label="Adresse">
-                <input className={inputCls} value={form.adresse} onChange={(e) => updateForm({ adresse: e.target.value })} placeholder="Av. Lumumba, Q. Matonge" />
+                <input className={inputCls} value={form.adresse} onChange={(e) => updateForm({ adresse: e.target.value })} placeholder="Av. in mazaz, Q. Malela" />
               </Field>
             </div>
           </div>
@@ -493,14 +481,17 @@ export default function ElevesPage() {
             <button type="button" onClick={() => setForm({ ...emptyForm, dateInscription: today() })} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Réinitialiser
             </button>
-            <button type="submit" disabled={!activeYear} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:bg-slate-300">
+            <button
+              type="submit"
+              disabled={!activeYear}
+              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
               Enregistrer l&apos;inscription
             </button>
           </div>
         </form>
       )}
 
-      {/* ============ TAB RÉINSCRIPTION ============ */}
       {tab === 'reinscription' && (
         <ReinscriptionTab
           pastStudents={pastStudentsToReinscrire}
@@ -509,7 +500,6 @@ export default function ElevesPage() {
         />
       )}
 
-      {/* ============ MODALS ============ */}
       {statusEdit && (
         <StatusModal
           student={statusEdit}
@@ -683,7 +673,6 @@ function ReinscriptionModal({
 }) {
   const [years] = useSchoolYears();
 
-  // Détection automatique
   const suggested = useMemo(() => {
     const wasRedoublant = student.statut === 'Redoublant';
     if (wasRedoublant) {
@@ -693,7 +682,6 @@ function ReinscriptionModal({
     if (!next) {
       return { classe: '', niveau: '', action: 'fin-cycle' as const };
     }
-    // Retrouver le niveau de la nouvelle classe
     let newNiveau: Niveau | '' = '';
     for (const [niv, classes] of Object.entries(CLASSES)) {
       if (classes.includes(next)) { newNiveau = niv as Niveau; break; }
@@ -734,6 +722,8 @@ function ReinscriptionModal({
       nomParent: student.nomParent,
       telephoneParent: student.telephoneParent,
       adresse: student.adresse,
+      ecoleProvenance: student.ecoleProvenance || '',
+      professionResponsable: student.professionResponsable || '',
       niveau,
       classe,
       option: classeAvecOption(classe) ? option : '',
@@ -759,7 +749,6 @@ function ReinscriptionModal({
         </div>
 
         <div className="space-y-4 p-5">
-          {/* Info élève */}
           <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-xs">
             <div>
               <p className="text-slate-500">Matricule</p>
@@ -781,7 +770,6 @@ function ReinscriptionModal({
             </div>
           </div>
 
-          {/* Proposition auto */}
           <div className={`rounded-lg border p-3 text-sm ${
             suggested.action === 'redouble'
               ? 'border-amber-200 bg-amber-50 text-amber-800'
@@ -790,26 +778,16 @@ function ReinscriptionModal({
                 : 'border-red-200 bg-red-50 text-red-800'
           }`}>
             {suggested.action === 'redouble' && (
-              <p>
-                🔄 <b>Redoublement détecté</b> — l&apos;élève reste en <b>{suggested.classe}</b>.
-                Vous pouvez modifier ci-dessous.
-              </p>
+              <p>🔄 <b>Redoublement détecté</b> — l&apos;élève reste en <b>{suggested.classe}</b>. Vous pouvez modifier ci-dessous.</p>
             )}
             {suggested.action === 'passe' && (
-              <p>
-                ✅ <b>Passage automatique</b> — l&apos;élève passe de <b>{student.classe}</b> à <b>{suggested.classe}</b>.
-                Vous pouvez modifier ci-dessous.
-              </p>
+              <p>✅ <b>Passage automatique</b> — l&apos;élève passe de <b>{student.classe}</b> à <b>{suggested.classe}</b>. Vous pouvez modifier ci-dessous.</p>
             )}
             {suggested.action === 'fin-cycle' && (
-              <p>
-                🎓 <b>Fin de cycle détecté</b> — l&apos;élève a terminé sa dernière classe. Sélectionnez une option ci-dessous
-                ou marquez-le <b>Diplômé</b>.
-              </p>
+              <p>🎓 <b>Fin de cycle détecté</b> — l&apos;élève a terminé sa dernière classe. Sélectionnez une option ci-dessous ou marquez-le <b>Diplômé</b>.</p>
             )}
           </div>
 
-          {/* Formulaire */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Nouveau niveau" required>
               <select
@@ -889,7 +867,7 @@ function ReinscriptionModal({
 }
 
 /* ============================================================
-   Modal Statut (raccourci)
+   Modal Statut
    ============================================================ */
 function StatusModal({
   student, onClose, onSave,
@@ -965,9 +943,9 @@ function FicheEleveModal({
   }, [student.dateNaissance]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4">
-      <div className="max-h-[95vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <div className="flex justify-end gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4 print:bg-white print:p-0">
+      <div className="max-h-[95vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl print:max-h-none print:max-w-none print:rounded-none print:shadow-none">
+        <div className="flex justify-end gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3 print:hidden">
           <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
             Fermer
           </button>
@@ -998,7 +976,7 @@ function FicheEleveModal({
             </div>
           </div>
 
-          <Section title="👤 Identité">
+          <Section title="👤 Identité de l'élève">
             <Info label="Nom" value={student.nom} />
             <Info label="Postnom" value={student.postnom || '—'} />
             <Info label="Prénom" value={student.prenom} />
@@ -1006,10 +984,12 @@ function FicheEleveModal({
             <Info label="Date de naissance" value={student.dateNaissance || '—'} />
             <Info label="Lieu de naissance" value={student.lieuNaissance || '—'} />
             <Info label="Âge" value={ageText || '—'} />
+            <Info label="École de provenance" value={student.ecoleProvenance || '—'} />
           </Section>
 
           <Section title="👨‍👩‍👧 Parent / Tuteur">
             <Info label="Nom complet" value={student.nomParent || '—'} />
+            <Info label="Profession" value={student.professionResponsable || '—'} />
             <Info label="Téléphone" value={student.telephoneParent || '—'} />
             <Info label="Adresse" value={student.adresse || '—'} span />
           </Section>
@@ -1022,11 +1002,23 @@ function FicheEleveModal({
           </Section>
 
           <div className="mb-5">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">💰 Situation financière</h3>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              💰 Situation financière
+            </h3>
             <div className="grid grid-cols-3 gap-3">
               <MoneyBox label="Total attendu" value={formatMoney(totalDue)} tone="slate" />
               <MoneyBox label="Total payé" value={formatMoney(totalPaid)} tone="emerald" />
               <MoneyBox label="Solde restant" value={formatMoney(balance)} tone="red" />
+            </div>
+            <div className="mt-2 text-center">
+              <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
+                status.color === 'emerald' ? 'bg-emerald-100 text-emerald-800'
+                : status.color === 'amber' ? 'bg-amber-100 text-amber-800'
+                : status.color === 'red' ? 'bg-red-100 text-red-800'
+                : 'bg-slate-100 text-slate-600'
+              }`}>
+                Statut paiement : {status.label}
+              </span>
             </div>
           </div>
 
@@ -1069,12 +1061,35 @@ function FicheEleveModal({
               </table>
             )}
           </div>
+
+          <div className="mt-6 border-t border-slate-200 pt-3 text-center text-[10px] text-slate-400">
+            Fiche générée par {schoolName} — Document non contractuel
+          </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        @media print {
+          @page { size: A4 portrait; margin: 10mm; }
+          html, body { margin: 0; padding: 0; background: #fff; }
+          body * { visibility: hidden; }
+          .fiche-print, .fiche-print * { visibility: visible; }
+          .fiche-print {
+            position: absolute; left: 0; top: 0;
+            width: 100%;
+            padding: 0 !important;
+          }
+          .fiche-print table { page-break-inside: auto; }
+          .fiche-print tr { page-break-inside: avoid; }
+        }
+      `}</style>
     </div>
   );
 }
 
+/* ============================================================
+   Petits composants
+   ============================================================ */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="mb-4">
@@ -1133,7 +1148,9 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent: 'indigo' | 'emerald' | 'amber' | 'slate' | 'purple' }) {
+function StatCard({
+  label, value, accent,
+}: { label: string; value: number; accent: 'indigo' | 'emerald' | 'amber' | 'slate' | 'purple' }) {
   const colors: Record<string, string> = {
     indigo: 'from-indigo-500 to-indigo-600',
     emerald: 'from-emerald-500 to-emerald-600',

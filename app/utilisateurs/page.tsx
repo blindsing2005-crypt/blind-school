@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useState, type FormEvent } from 'react';
+import { CLASSES } from '../lib/store';
 import {
   PERMISSION_LABELS,
   ROLES,
@@ -18,6 +19,8 @@ import {
 const inputCls =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-400';
 
+const ALL_CLASSES = Object.values(CLASSES).flat();
+
 type FormState = {
   username: string;
   fullName: string;
@@ -25,6 +28,7 @@ type FormState = {
   role: Role;
   password: string;
   active: boolean;
+  assignedClasses: string[];
 };
 
 const emptyForm: FormState = {
@@ -34,6 +38,7 @@ const emptyForm: FormState = {
   role: 'Secrétaire',
   password: '',
   active: true,
+  assignedClasses: [],
 };
 
 export default function UtilisateursPage() {
@@ -47,12 +52,20 @@ export default function UtilisateursPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [showRecovery, setShowRecovery] = useState(false);
 
-  // 🆕 Modal éditeur de permissions
   const [permsUser, setPermsUser] = useState<UserAccount | null>(null);
 
   const isAllowed = can('utilisateurs.manage');
 
   const reset = () => { setForm(emptyForm); setEditingId(null); setShowPwd(false); };
+
+  const toggleClassAssignment = (c: string) => {
+    setForm((f) => ({
+      ...f,
+      assignedClasses: f.assignedClasses.includes(c)
+        ? f.assignedClasses.filter((x) => x !== c)
+        : [...f.assignedClasses, c],
+    }));
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -83,6 +96,7 @@ export default function UtilisateursPage() {
                 email: form.email.trim().toLowerCase(),
                 role: form.role,
                 active: form.active,
+                assignedClasses: form.assignedClasses,
                 ...(passwordHash ? { passwordHash } : {}),
               }
             : u,
@@ -109,6 +123,7 @@ export default function UtilisateursPage() {
         customPermissions: null,
         resetCode: null,
         resetCodeExpiry: null,
+        assignedClasses: form.assignedClasses,
       };
       setUsers((list) => [...list, user]);
       setMessage({ type: 'success', text: `Compte créé — ${user.username}` });
@@ -124,6 +139,7 @@ export default function UtilisateursPage() {
       role: u.role,
       password: '',
       active: u.active,
+      assignedClasses: u.assignedClasses || [],
     });
     setEditingId(u.id);
   };
@@ -163,7 +179,6 @@ export default function UtilisateursPage() {
     alert('Code copié dans le presse-papier.');
   };
 
-  /* 🆕 Appliquer une permission custom pour un utilisateur */
   const togglePermission = (u: UserAccount, perm: Permission) => {
     const current = u.customPermissions ?? getUserPermissions(u);
     const next = current.includes(perm)
@@ -177,7 +192,6 @@ export default function UtilisateursPage() {
           : x,
       ),
     );
-    // Met à jour l'aperçu local
     if (permsUser && permsUser.id === u.id) {
       setPermsUser({ ...u, customPermissions: next.length > 0 ? next : [] });
     }
@@ -192,6 +206,16 @@ export default function UtilisateursPage() {
       setPermsUser({ ...u, customPermissions: null });
     }
     setMessage({ type: 'success', text: 'Permissions réinitialisées.' });
+  };
+
+  const toggleAssignedClass = (u: UserAccount, c: string) => {
+    const current = u.assignedClasses || [];
+    const next = current.includes(c)
+      ? current.filter((x) => x !== c)
+      : [...current, c];
+    setUsers((list) =>
+      list.map((x) => (x.id === u.id ? { ...x, assignedClasses: next } : x)),
+    );
   };
 
   const sorted = useMemo(
@@ -210,12 +234,14 @@ export default function UtilisateursPage() {
     );
   }
 
-  /* Regroupe les permissions par module pour l'affichage */
   const groupedPerms = PERMISSION_LABELS.reduce<Record<string, typeof PERMISSION_LABELS>>((acc, p) => {
     acc[p.group] = acc[p.group] || [];
     acc[p.group].push(p);
     return acc;
   }, {});
+
+  const showClassAssignment = form.role === 'Enseignant' ||
+    (form.assignedClasses && form.assignedClasses.length > 0);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -234,7 +260,7 @@ export default function UtilisateursPage() {
         </div>
       )}
 
-      {/* Code de secours global */}
+      {/* Code de secours */}
       <section className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -275,7 +301,7 @@ export default function UtilisateursPage() {
             <Field label="Nom complet" required>
               <input className={inputCls} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="ex : Marie KABILA" />
             </Field>
-            <Field label="📧 Email">
+            <Field label="Email">
               <input type="email" className={inputCls} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="marie@ecole.cd" />
             </Field>
             <Field label="Rôle">
@@ -297,6 +323,47 @@ export default function UtilisateursPage() {
                 </button>
               </div>
             </Field>
+          </div>
+
+          {/* 🆕 Classes assignées */}
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-indigo-900">
+                  🎓 Classes assignées (enseignant)
+                </p>
+                <p className="text-xs text-indigo-700">
+                  Si vous cochez des classes, cet utilisateur ne verra QUE ces classes dans l&apos;espace Bulletins.
+                  Laissez vide pour tout voir (administrateurs).
+                </p>
+              </div>
+              {form.assignedClasses.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, assignedClasses: [] })}
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                >
+                  Tout décocher ({form.assignedClasses.length})
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5 rounded-lg border border-indigo-200 bg-white p-2">
+              {ALL_CLASSES.map((c) => {
+                const on = form.assignedClasses.includes(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleClassAssignment(c)}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                      on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
@@ -327,8 +394,8 @@ export default function UtilisateursPage() {
               <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                 <th className="px-3 py-2 font-semibold">Utilisateur</th>
                 <th className="px-3 py-2 font-semibold">Nom complet</th>
-                <th className="px-3 py-2 font-semibold">Email</th>
                 <th className="px-3 py-2 font-semibold">Rôle</th>
+                <th className="px-3 py-2 font-semibold">Classes assignées</th>
                 <th className="px-3 py-2 font-semibold">Statut</th>
                 <th className="px-3 py-2"></th>
               </tr>
@@ -336,24 +403,40 @@ export default function UtilisateursPage() {
             <tbody>
               {sorted.map((u) => {
                 const isCustom = u.customPermissions !== null;
+                const classes = u.assignedClasses || [];
                 return (
                   <tr key={u.id} className="border-b border-slate-100">
                     <td className="px-3 py-2 font-mono text-xs">{u.username}</td>
                     <td className="px-3 py-2 font-medium">{u.fullName}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{u.email || '—'}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-col gap-1">
                         <select
                           value={u.role}
                           onChange={(e) => changeRole(u, e.target.value as Role)}
-                          className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800 outline-none hover:bg-indigo-100 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800 outline-none hover:bg-indigo-100"
                         >
                           {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                         </select>
                         {isCustom && (
-                          <span className="text-[10px] font-medium text-amber-700">⚙️ Permissions personnalisées</span>
+                          <span className="text-[10px] font-medium text-amber-700">⚙️ Personnalisées</span>
                         )}
                       </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      {classes.length === 0 ? (
+                        <span className="text-xs text-slate-400">Toutes</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {classes.slice(0, 3).map((c) => (
+                            <span key={c} className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700">
+                              {c}
+                            </span>
+                          ))}
+                          {classes.length > 3 && (
+                            <span className="text-[10px] text-slate-500">+{classes.length - 3}</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <button
@@ -366,7 +449,7 @@ export default function UtilisateursPage() {
                       </button>
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button onClick={() => setPermsUser(u)} className="mr-3 text-xs font-medium text-amber-600 hover:underline" title="Personnaliser les permissions">
+                      <button onClick={() => setPermsUser(u)} className="mr-3 text-xs font-medium text-amber-600 hover:underline">
                         🔐 Permissions
                       </button>
                       <button onClick={() => handleEdit(u)} className="mr-3 text-xs font-medium text-indigo-600 hover:underline">
@@ -386,12 +469,9 @@ export default function UtilisateursPage() {
         </div>
       </section>
 
-      {/* Matrice des permissions par rôle */}
+      {/* Matrice permissions */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="mb-4 text-lg font-semibold">🔐 Permissions par défaut selon le rôle</h2>
-        <p className="mb-4 text-xs text-slate-500">
-          Ces permissions s&apos;appliquent par défaut. Cliquez sur 🔐 Permissions d&apos;un utilisateur pour les personnaliser.
-        </p>
+        <h2 className="mb-4 text-lg font-semibold">🔐 Permissions par défaut</h2>
         <div className="-mx-2 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
@@ -419,7 +499,7 @@ export default function UtilisateursPage() {
         </div>
       </section>
 
-      {/* 🆕 Modal : éditeur de permissions par utilisateur */}
+      {/* Modal Permissions */}
       {permsUser && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4" onClick={() => setPermsUser(null)}>
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -432,32 +512,21 @@ export default function UtilisateursPage() {
 
             <div className="space-y-4 p-5">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                ⚠️ Cochez exactement les modules auxquels cet utilisateur a droit.
-                Cela remplace les permissions par défaut de son rôle.
-                <button
-                  onClick={() => resetPermissions(permsUser)}
-                  className="ml-2 font-semibold text-amber-900 underline"
-                >
+                ⚠️ Cochez exactement les modules autorisés.
+                <button onClick={() => resetPermissions(permsUser)} className="ml-2 font-semibold underline">
                   Réinitialiser selon le rôle
                 </button>
               </div>
 
               {Object.entries(groupedPerms).map(([group, items]) => (
                 <div key={group} className="rounded-xl border border-slate-200 p-3">
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    {group}
-                  </h4>
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{group}</h4>
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     {items.map(({ perm, label }) => {
                       const active = (permsUser.customPermissions ?? getUserPermissions(permsUser)).includes(perm);
                       return (
-                        <label key={perm} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition hover:bg-slate-50">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4"
-                            checked={active}
-                            onChange={() => togglePermission(permsUser, perm)}
-                          />
+                        <label key={perm} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
+                          <input type="checkbox" className="h-4 w-4" checked={active} onChange={() => togglePermission(permsUser, perm)} />
                           <span>{label}</span>
                         </label>
                       );
@@ -465,14 +534,41 @@ export default function UtilisateursPage() {
                   </div>
                 </div>
               ))}
+
+              {/* Classes dans le modal */}
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-indigo-700">
+                  🎓 Classes assignées
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_CLASSES.map((c) => {
+                    const on = (permsUser.assignedClasses || []).includes(c);
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          toggleAssignedClass(permsUser, c);
+                          const updated = (permsUser.assignedClasses || []).includes(c)
+                            ? (permsUser.assignedClasses || []).filter((x) => x !== c)
+                            : [...(permsUser.assignedClasses || []), c];
+                          setPermsUser({ ...permsUser, assignedClasses: updated });
+                        }}
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                          on ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-indigo-700">
+                  L&apos;enseignant ne verra que ces classes dans l&apos;espace Bulletins.
+                </p>
+              </div>
             </div>
 
-            <div className="flex justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
-              <p className="text-xs text-slate-500">
-                {permsUser.customPermissions
-                  ? `${permsUser.customPermissions.length} permission(s) activée(s)`
-                  : `Permissions du rôle par défaut (${getUserPermissions(permsUser).length})`}
-              </p>
+            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
               <button onClick={() => setPermsUser(null)} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
                 Terminer
               </button>

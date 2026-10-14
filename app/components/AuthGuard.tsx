@@ -9,9 +9,9 @@ import {
   useUsers,
   type UserAccount,
 } from '../lib/auth';
+import { useLicense } from '../lib/license';
 
-const PUBLIC_ROUTES = ['/login'];
-
+const PUBLIC_ROUTES = ['/login', '/licence'];
 const USERS_KEY = 'blind-school-users';
 const RECOVERY_KEY = 'blind-school-recovery-code';
 
@@ -21,18 +21,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [session] = useSession();
   const [, setUsers] = useUsers();
   const [, setRecoveryCode] = useRecoveryCode();
+  const { status } = useLicense();
   const [ready, setReady] = useState(false);
 
   /* ============================================================
-     INITIALISATION (une seule fois)
-     On lit DIRECTEMENT dans localStorage — plus fiable que l'état React
-     qui peut être vide au premier rendu.
+     INITIALISATION
      ============================================================ */
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      // 1) Lire la liste des utilisateurs DANS localStorage
       let storedUsers: UserAccount[] = [];
       try {
         const raw = window.localStorage.getItem(USERS_KEY);
@@ -42,20 +40,19 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       } catch { /* ignore */ }
 
-      // 2) Lire le code de secours
       let storedCode: string | null = null;
       try {
         const raw = window.localStorage.getItem(RECOVERY_KEY);
         if (raw) storedCode = JSON.parse(raw);
       } catch { /* ignore */ }
 
-      // 3) Migration douce : ajouter les champs manquants aux anciens comptes
       if (storedUsers.length > 0) {
         const needsMigration = storedUsers.some(
           (u) =>
             u.email === undefined ||
             u.customPermissions === undefined ||
-            u.resetCode === undefined,
+            u.resetCode === undefined ||
+            u.assignedClasses === undefined,
         );
         if (needsMigration) {
           storedUsers = storedUsers.map((u) => ({
@@ -64,13 +61,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             customPermissions: u.customPermissions ?? null,
             resetCode: u.resetCode ?? null,
             resetCodeExpiry: u.resetCodeExpiry ?? null,
+            assignedClasses: u.assignedClasses ?? [],
           }));
           window.localStorage.setItem(USERS_KEY, JSON.stringify(storedUsers));
           if (!cancelled) setUsers(storedUsers);
         }
       }
 
-      // 4) Créer l'admin par défaut UNIQUEMENT si la liste est vide
       if (storedUsers.length === 0) {
         const hash = await hashPassword('admin123');
         const admin: UserAccount = {
@@ -86,25 +83,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           customPermissions: null,
           resetCode: null,
           resetCodeExpiry: null,
+          assignedClasses: [],
         };
         window.localStorage.setItem(USERS_KEY, JSON.stringify([admin]));
         if (!cancelled) setUsers([admin]);
       }
 
-      // 5) Créer le code de secours s'il n'existe pas
       if (!storedCode) {
         const code = generateRecoveryCode();
         window.localStorage.setItem(RECOVERY_KEY, JSON.stringify(code));
         if (!cancelled) setRecoveryCode(code);
       }
 
-      // 6) On est prêts
       if (!cancelled) setReady(true);
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -112,19 +106,36 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
      REDIRECTIONS
      ============================================================ */
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !status) return;
+
     const isPublic = PUBLIC_ROUTES.includes(path);
-    if (!session && !isPublic) {
-      router.replace('/login');
-    } else if (session && path === '/login') {
-      router.replace('/');
+
+    // Licence expirée → forcer /licence
+    if (status.isExpired && path !== '/licence') {
+      router.replace('/licence');
+      return;
     }
-  }, [ready, session, path, router]);
+
+    // Licence valide mais sur /licence → retour accueil
+    if (!status.isExpired && path === '/licence') {
+      router.replace('/');
+      return;
+    }
+
+    // Auth
+    if (!status.isExpired) {
+      if (!session && !isPublic) {
+        router.replace('/login');
+      } else if (session && path === '/login') {
+        router.replace('/');
+      }
+    }
+  }, [ready, status, session, path, router]);
 
   /* ============================================================
      AFFICHAGE
      ============================================================ */
-  if (!ready) {
+  if (!ready || !status) {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-50">
         <div className="text-center">
@@ -135,7 +146,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!session && !PUBLIC_ROUTES.includes(path)) {
+  if (status.isExpired && path !== '/licence') {
+    return (
+      <div className="grid min-h-screen place-items-center bg-slate-50">
+        <p className="text-sm text-slate-500">Licence expirée — redirection…</p>
+      </div>
+    );
+  }
+
+  if (!status.isExpired && !session && !PUBLIC_ROUTES.includes(path)) {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-50">
         <p className="text-sm text-slate-500">Redirection…</p>

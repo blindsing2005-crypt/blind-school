@@ -28,21 +28,23 @@ export interface Student {
   nomParent: string;
   telephoneParent: string;
   adresse: string;
+  ecoleProvenance: string;
+  professionResponsable: string;
   niveau: string;
   classe: string;
   option: string;
   dateInscription: string;
   statut: StudentStatus;
   anneeScolaireId: string;
-  previousYearId?: string;      // 🆕 Année précédente (réinscription)
-  previousStudentId?: string;   // 🆕 ID de l'inscription précédente
+  previousYearId?: string;
+  previousStudentId?: string;
 }
 
 export interface Payment {
   id: string;
   studentId: string;
   amount: number;
-  tranche: string;      // contient le LABEL de la tranche (ex : '1ère tranche')
+  tranche: string;
   date: string;
   method: string;
   receiptNumber: string;
@@ -51,7 +53,6 @@ export interface Payment {
   anneeScolaireId: string;
 }
 
-/* TrancheSetting avec 3 montants par niveau */
 export interface TrancheSetting {
   id: string;
   label: string;
@@ -124,7 +125,6 @@ export const TRANCHE_OPTIONS = [
 
 export const PAYMENT_METHODS = ['Espèces', 'Mobile Money', 'Virement', 'Chèque'] as const;
 
-/* ---------- Tranches par défaut (3 niveaux) ---------- */
 const ANNEE = new Date().getFullYear();
 
 export const DEFAULT_TRANCHES: TrancheSetting[] = [
@@ -207,12 +207,14 @@ function usePersistentState<T>(
 export const useStudents = () => {
   const [students, setStudents] = usePersistentState<Student[]>(STORAGE_KEYS.students, []);
   useEffect(() => {
-    if (students.some((s) => !s.statut || s.anneeScolaireId === undefined)) {
+    if (students.some((s) => !s.statut || s.anneeScolaireId === undefined || s.ecoleProvenance === undefined)) {
       setStudents((list) =>
         list.map((s) => ({
           ...s,
           statut: s.statut || ('Actif' as StudentStatus),
           anneeScolaireId: s.anneeScolaireId ?? '',
+          ecoleProvenance: s.ecoleProvenance ?? '',
+          professionResponsable: s.professionResponsable ?? '',
         })),
       );
     }
@@ -221,7 +223,7 @@ export const useStudents = () => {
   return [students, setStudents] as const;
 };
 
-/* ---------- Paiements (migration auto) ---------- */
+/* ---------- Paiements ---------- */
 export const usePayments = () => {
   const [payments, setPayments] = usePersistentState<Payment[]>(STORAGE_KEYS.payments, []);
   useEffect(() => {
@@ -233,17 +235,16 @@ export const usePayments = () => {
   return [payments, setPayments] as const;
 };
 
-/* ---------- École + migration des tranches ---------- */
+/* ---------- École + migration tranches ---------- */
 export const useSchoolSettings = () => {
   const [settings, setSettings] = usePersistentState<SchoolSettings>(
     STORAGE_KEYS.settings,
     DEFAULT_SCHOOL_SETTINGS,
   );
 
-  // Migration : ancien format (amount unique) → nouveau format (3 montants)
   useEffect(() => {
     if (!settings.tranches || settings.tranches.length === 0) return;
-        const needsMigration = settings.tranches.some(
+    const needsMigration = settings.tranches.some(
       (t) => {
         const legacy = t as unknown as { amountMaternelle?: number; amount?: number };
         return legacy.amountMaternelle === undefined;
@@ -320,7 +321,6 @@ export function nextReceiptNumber(payments: Payment[]): string {
   return `REC-${year}-${String(payments.length + 1).padStart(5, '0')}`;
 }
 
-/* Montant d'une tranche selon le niveau */
 export function trancheAmountFor(t: TrancheSetting, niveau: string): number {
   if (niveau === 'Maternelle') return t.amountMaternelle || 0;
   if (niveau === 'Primaire') return t.amountPrimaire || 0;
@@ -328,7 +328,6 @@ export function trancheAmountFor(t: TrancheSetting, niveau: string): number {
   return 0;
 }
 
-/** Total dû — si niveau fourni, calcul par niveau. Sinon, fallback Primaire. */
 export function totalDue(tranches: TrancheSetting[], niveau?: string): number {
   if (niveau) {
     return tranches.reduce((s, t) => s + trancheAmountFor(t, niveau), 0);
@@ -367,7 +366,6 @@ export function getTrancheStatus(paid: number, due: number): PaymentStatus {
   return getPaymentStatus(paid, due);
 }
 
-/* Classe suivante (réinscription) */
 export function nextClass(currentClasse: string): string | null {
   const order: string[] = [
     '1ère Maternelle', '2ème Maternelle', '3ème Maternelle',
@@ -388,7 +386,6 @@ export function formatYearLabel(start: string, end: string): string {
   return `${y1} - ${y2}`;
 }
 
-/* 🆕 Récupère le libellé de l'année précédente d'un élève */
 export function getPrevYearLabel(
   student: Student,
   years: SchoolYear[],

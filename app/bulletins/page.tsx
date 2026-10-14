@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   CLASSES,
   NIVEAUX,
@@ -11,7 +11,6 @@ import {
   type Student,
 } from '../lib/store';
 import {
-  appreciationFor,
   buildClassBulletins,
   computeGroupMaxima,
   computeStudentBulletin,
@@ -33,6 +32,7 @@ import {
   type Subject,
   type SubjectGroup,
 } from '../lib/bulletins';
+import { useAuth } from '../lib/auth';
 
 const inputCls =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400';
@@ -157,7 +157,7 @@ function ModelesTab({
   config: BulletinConfig;
   setConfig: ReturnType<typeof useBulletinConfig>[1];
   getTemplate: (c: string, o: string) => BulletinTemplate | undefined;
-  saveTemplate: (t: BulletinTemplate) => void;
+  saveTemplate: (tpl: BulletinTemplate) => void;
 }) {
   const [niveau, setNiveau] = useState<Niveau | ''>('');
   const [classe, setClasse] = useState('');
@@ -401,7 +401,7 @@ function ModelesTab({
               </div>
 
               <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-xs text-emerald-800">
-                ✅ Total maxima généraux pour cette classe : <b>{grandMaxima(tpl)}</b> — Max par période : <b>{getPeriodMax(tpl)}</b> — Max examen : <b>{getExamMax(tpl)}</b>
+                ✅ Total maxima généraux : <b>{grandMaxima(tpl)}</b> — Max par période : <b>{getPeriodMax(tpl)}</b> — Max examen : <b>{getExamMax(tpl)}</b>
               </p>
             </div>
           </div>
@@ -721,7 +721,7 @@ function BulletinsTab({
 }
 
 /* ============================================================
-   TAB 4 — ESPACE ENSEIGNANT
+   TAB 4 — ESPACE ENSEIGNANT (avec classes assignées)
    ============================================================ */
 function TeacherTab({
   students, grades, saveGrades, getTemplate,
@@ -731,13 +731,42 @@ function TeacherTab({
   saveGrades: (g: Grade[]) => void;
   getTemplate: (c: string, o: string) => BulletinTemplate | undefined;
 }) {
+  const { currentUser } = useAuth();
   const [niveau, setNiveau] = useState<Niveau | ''>('');
   const [classe, setClasse] = useState('');
   const [option, setOption] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [periodKey, setPeriodKey] = useState('');
 
-  const classesDispo = niveau ? CLASSES[niveau] : [];
+  /** 🆕 Classes assignées à l'enseignant (vide = toutes) */
+  const assignedClasses = currentUser?.assignedClasses || [];
+  const hasRestriction = assignedClasses.length > 0;
+
+  /** 🆕 Vérifie si l'utilisateur peut accéder à une classe */
+  const canAccessClass = (c: string, opt?: string) => {
+    if (!hasRestriction) return true;
+    if (assignedClasses.includes(c)) return true;
+    if (opt && assignedClasses.includes(`${c} • ${opt}`)) return true;
+    return false;
+  };
+
+  /** 🆕 Niveaux autorisés selon les classes assignées */
+  const allowedNiveaux = useMemo<Niveau[]>(() => {
+    if (!hasRestriction) return [...NIVEAUX];
+    const set = new Set<Niveau>();
+    assignedClasses.forEach((ac) => {
+      const baseClass = ac.split(' • ')[0];
+      for (const [niv, list] of Object.entries(CLASSES)) {
+        if (list.includes(baseClass)) set.add(niv as Niveau);
+      }
+    });
+    return Array.from(set);
+  }, [assignedClasses, hasRestriction]);
+
+  const classesDispo = niveau
+    ? CLASSES[niveau].filter((c) => canAccessClass(c))
+    : [];
+
   const besoinOption = classe ? classeAvecOption(classe) : false;
   const tpl = classe && (!besoinOption || option)
     ? getTemplate(classe, besoinOption ? option : '')
@@ -774,6 +803,19 @@ function TeacherTab({
     }]);
   };
 
+  // Si enseignant avec restriction → pré-sélectionner la 1ère classe assignée
+  useEffect(() => {
+    if (!hasRestriction) return;
+    if (classe) return;
+    const firstNiveau = allowedNiveaux[0];
+    if (!firstNiveau) return;
+    const classes = CLASSES[firstNiveau].filter((c) => canAccessClass(c));
+    if (classes.length === 0) return;
+    setNiveau(firstNiveau);
+    setClasse(classes[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasRestriction, allowedNiveaux]);
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-5">
@@ -781,30 +823,73 @@ function TeacherTab({
         <p className="text-sm text-indigo-700">
           Sélectionnez votre classe, votre branche et la période. Vos notes remontent automatiquement au bulletin.
         </p>
+        {hasRestriction && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs">
+            <span className="font-semibold text-indigo-700">🎓 Vos classes autorisées :</span>
+            {assignedClasses.map((c) => (
+              <span key={c} className="rounded-full bg-indigo-100 px-2 py-0.5 font-medium text-indigo-800">
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
+
+      {hasRestriction && allowedNiveaux.length === 0 && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 text-sm text-amber-800">
+          ⚠️ Aucune classe ne vous a été assignée. Contactez l&apos;administrateur.
+        </div>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <Field label="Niveau">
-            <select className={inputCls} value={niveau} onChange={(e) => { setNiveau(e.target.value as Niveau | ''); setClasse(''); setOption(''); setSubjectId(''); }}>
+            <select
+              className={inputCls}
+              value={niveau}
+              onChange={(e) => {
+                setNiveau(e.target.value as Niveau | '');
+                setClasse('');
+                setOption('');
+                setSubjectId('');
+              }}
+              disabled={hasRestriction && allowedNiveaux.length <= 1}
+            >
               <option value="">— Choisir —</option>
-              {NIVEAUX.map((n) => <option key={n} value={n}>{n}</option>)}
+              {(hasRestriction ? allowedNiveaux : NIVEAUX).map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
             </select>
           </Field>
           <Field label="Classe">
-            <select className={inputCls} value={classe} onChange={(e) => { setClasse(e.target.value); setOption(''); setSubjectId(''); }} disabled={!niveau}>
+            <select
+              className={inputCls}
+              value={classe}
+              onChange={(e) => { setClasse(e.target.value); setOption(''); setSubjectId(''); }}
+              disabled={!niveau}
+            >
               <option value="">— Choisir —</option>
               {classesDispo.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
           <Field label="Option">
-            <select className={inputCls} value={option} onChange={(e) => { setOption(e.target.value); setSubjectId(''); }} disabled={!besoinOption}>
+            <select
+              className={inputCls}
+              value={option}
+              onChange={(e) => { setOption(e.target.value); setSubjectId(''); }}
+              disabled={!besoinOption}
+            >
               <option value="">{besoinOption ? '— Choisir —' : '— Non applicable —'}</option>
               {OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           </Field>
           <Field label="Période">
-            <select className={inputCls} value={currentPeriodKey} onChange={(e) => setPeriodKey(e.target.value)} disabled={!tpl}>
+            <select
+              className={inputCls}
+              value={currentPeriodKey}
+              onChange={(e) => setPeriodKey(e.target.value)}
+              disabled={!tpl}
+            >
               {allPeriodOptions.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
           </Field>
@@ -902,14 +987,18 @@ function BulletinPrintModal({
   const etab = config.etablissement;
   const anneeScolaire = `${new Date().getFullYear()} - ${new Date().getFullYear() + 1}`;
 
-  const fmt = (v: number | null | undefined) =>
-    v === null || v === undefined ? '' : v;
+  const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '' : v);
 
-  const semestres = template.semesters;
+  const sem1 = template.semesters[0];
+  const sem2 = template.semesters[1];
+
+  const s1PeriodsCount = sem1?.periods.length || 0;
+  const s2PeriodsCount = sem2?.periods.length || 0;
+  const totalDataCols = s1PeriodsCount + 2 + s2PeriodsCount + 3;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4 print:bg-white print:p-0">
-      <div className="max-h-[95vh] w-full max-w-[900px] overflow-y-auto rounded-2xl bg-white shadow-2xl print:max-h-none print:max-w-none print:rounded-none print:shadow-none">
+      <div className="max-h-[95vh] w-full max-w-[820px] overflow-y-auto rounded-2xl bg-white shadow-2xl print:max-h-none print:max-w-none print:rounded-none print:shadow-none">
         <div className="flex justify-end gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3 print:hidden">
           <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
             Fermer
@@ -921,83 +1010,73 @@ function BulletinPrintModal({
 
         <div className="bulletin-print">
           {/* En-tête */}
-          <table style={headerTable}>
+          <table className="bp-header">
             <tbody>
               <tr>
-                <td style={{ ...headerCell, width: '22%', textAlign: 'left' }}>
+                <td className="bp-header-flag">
                   {etab.drapeau ? (
-                    <img src={etab.drapeau} alt="Drapeau" style={{ height: '54px', objectFit: 'contain' }} />
+                    <img src={etab.drapeau} alt="Drapeau" style={{ height: '58px', objectFit: 'contain' }} />
                   ) : (
-                    <div style={placeholderBox}>Drapeau RDC</div>
+                    <div className="bp-placeholder">Drapeau RDC</div>
                   )}
                 </td>
-                <td style={{ ...headerCell, width: '56%', textAlign: 'center' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '10px' }}>
-                    REPUBLIQUE DEMOCRATIQUE DU CONGO
-                  </div>
-                  <div style={{ fontWeight: 'bold', fontSize: '9px' }}>
-                    MINISTERE DE L&apos;ENSEIGNEMENT PRIMAIRE,
-                  </div>
-                  <div style={{ fontWeight: 'bold', fontSize: '9px' }}>
-                    SECONDAIRE ET TECHNIQUE
-                  </div>
+                <td className="bp-header-title">
+                  <div>REPUBLIQUE DEMOCRATIQUE DU CONGO</div>
+                  <div>MINISTERE DE L&apos;ENSEIGNEMENT PRIMAIRE,</div>
+                  <div>SECONDAIRE ET TECHNIQUE</div>
                 </td>
-                <td style={{ ...headerCell, width: '22%', textAlign: 'right' }}>
+                <td className="bp-header-armoiries">
                   {etab.armoiries ? (
-                    <img src={etab.armoiries} alt="Armoiries" style={{ height: '54px', objectFit: 'contain' }} />
+                    <img src={etab.armoiries} alt="Armoiries" style={{ height: '58px', objectFit: 'contain' }} />
                   ) : (
-                    <div style={placeholderBox}>Armoiries</div>
+                    <div className="bp-placeholder">Armoiries</div>
                   )}
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* Bandeau de code */}
-          <div style={codeBand}>
-            {Array.from({ length: 14 }).map((_, i) => (
-              <span key={i} style={codeBox}></span>
+          <div className="bp-codeband">
+            {Array.from({ length: 15 }).map((_, i) => (
+              <span key={i} className="bp-codebox"></span>
             ))}
           </div>
 
-          {/* Bloc Province / École / Élève */}
-          <table style={blockTable}>
+          <table className="bp-info">
             <tbody>
               <tr>
-                <td style={{ ...blockCell, width: '55%', verticalAlign: 'top' }}>
-                  <div style={lineRow}><b>PROVINCE :</b> <span style={fillLine}>{etab.province || '...................................................'}</span></div>
-                  <div style={lineRow}><b>ECOLE :</b> <span style={fillLine}>{etab.ecole || schoolName || '...................................................'}</span></div>
-                  <div style={lineRow}><b>LIEU D&apos;IMPLANTATION :</b> <span style={fillLine}>{etab.lieuImplantation || '.......................'}</span></div>
-                  <div style={lineRow}><b>COMMUNE/TER. (1) :</b> <span style={fillLine}>{etab.commune || '.......................'}</span></div>
-                  <div style={lineRow}><b>VILLE :</b> <span style={fillLine}>{etab.ville || '.......................'}</span></div>
-                  <div style={lineRow}>
-                    <b>CODE :</b>{' '}
+                <td className="bp-info-left">
+                  <div className="bp-line"><b>PROVINCE :</b> <span className="bp-fill">{etab.province || '..................................................'}</span></div>
+                  <div className="bp-line"><b>ECOLE :</b> <span className="bp-fill">{etab.ecole || schoolName || '...........................................'}</span></div>
+                  <div className="bp-line"><b>LIEU D&apos;IMPLANTATION :</b> <span className="bp-fill">{etab.lieuImplantation || '.......................'}</span></div>
+                  <div className="bp-line"><b>COMMUNE/TER. (1) :</b> <span className="bp-fill">{etab.commune || '.......................'}</span></div>
+                  <div className="bp-line"><b>VILLE :</b> <span className="bp-fill">{etab.ville || '.......................'}</span></div>
+                  <div className="bp-line">
+                    <b>CODE :</b>
                     {etab.code.split('').map((c, i) => (
-                      <span key={i} style={smallCodeBox}>{c}</span>
+                      <span key={i} className="bp-smallbox">{c}</span>
                     ))}
                     {Array.from({ length: Math.max(0, 8 - etab.code.length) }).map((_, i) => (
-                      <span key={`e${i}`} style={smallCodeBox}></span>
+                      <span key={`e${i}`} className="bp-smallbox"></span>
                     ))}
                   </div>
                 </td>
-                <td style={{ ...blockCell, width: '45%', verticalAlign: 'top' }}>
-                  <div style={lineRow}>
-                    <b>ELEVE :</b> {student.nom} {student.postnom} {student.prenom}
-                    <span style={{ marginLeft: 'auto' }}><b>SEXE :</b> {student.sexe}</span>
+                <td className="bp-info-right">
+                  <div className="bp-line bp-line-between">
+                    <span><b>ELEVE :</b> {student.nom} {student.postnom} {student.prenom}</span>
+                    <span><b>SEXE :</b> {student.sexe}</span>
                   </div>
-                  <div style={lineRow}>
-                    <b>NE (E) A :</b> {student.lieuNaissance}
-                    <span style={{ marginLeft: 'auto' }}>
-                      <b>LE :</b> {student.dateNaissance || '..../..../......'}
-                    </span>
+                  <div className="bp-line bp-line-between">
+                    <span><b>NE (E) A :</b> {student.lieuNaissance}</span>
+                    <span><b>LE :</b> {student.dateNaissance || '..../..../......'}</span>
                   </div>
-                  <div style={lineRow}>
+                  <div className="bp-line">
                     <b>CLASSE :</b> {student.classe}{student.option ? ` — ${student.option}` : ''}
                   </div>
-                  <div style={lineRow}>
+                  <div className="bp-line">
                     <b>N° PERM. :</b>{' '}
                     {Array.from({ length: 10 }).map((_, i) => (
-                      <span key={i} style={smallCodeBox}></span>
+                      <span key={i} className="bp-smallbox"></span>
                     ))}
                   </div>
                 </td>
@@ -1005,102 +1084,105 @@ function BulletinPrintModal({
             </tbody>
           </table>
 
-          {/* Titre */}
-          <table style={blockTable}>
+          <table className="bp-title-table">
             <tbody>
               <tr>
-                <td style={{ ...blockCell, width: '55%', textAlign: 'center', fontWeight: 'bold', background: '#f3f4f6' }}>
-                  {template.title.toUpperCase()}
-                </td>
-                <td style={{ ...blockCell, width: '45%', textAlign: 'center', fontWeight: 'bold', background: '#f3f4f6' }}>
-                  {template.semesterTitle} {anneeScolaire}
-                </td>
+                <td className="bp-title-left">{template.title.toUpperCase()}</td>
+                <td className="bp-title-right">{template.semesterTitle} {anneeScolaire}</td>
               </tr>
             </tbody>
           </table>
 
-          {/* Tableau principal */}
-          <table style={bigTable}>
+          <table className="bp-big">
+            <colgroup>
+              <col style={{ width: '24%' }} />
+              {sem1?.periods.map((p) => <col key={`c1-${p.id}`} style={{ width: '4.6%' }} />)}
+              <col style={{ width: '4.6%' }} />
+              <col style={{ width: '4.6%' }} />
+              <col style={{ width: '8px' }} />
+              {sem2?.periods.map((p) => <col key={`c2-${p.id}`} style={{ width: '4.6%' }} />)}
+              <col style={{ width: '4.6%' }} />
+              <col style={{ width: '4.6%' }} />
+              <col style={{ width: '5.2%' }} />
+              <col style={{ width: '10%' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th rowSpan={3} style={{ ...thCell, width: '26%', textAlign: 'left', verticalAlign: 'bottom' }}>
-                  BRANCHES
-                </th>
-                <th colSpan={4} style={{ ...thCell, textAlign: 'center' }}>
-                  {semestres[0]?.label || 'PREMIER SEMESTRE'}
-                </th>
-                <th colSpan={5} style={{ ...thCell, textAlign: 'center' }}>
-                  {semestres[1]?.label || 'SECOND SEMESTRE'}
-                </th>
-                <th rowSpan={3} style={{ ...thCell, textAlign: 'center', width: '10%' }}>
-                  EXAMEN DE<br />REPECHAGE
-                </th>
+                <th rowSpan={3} className="bp-th bp-th-left">BRANCHES</th>
+                <th colSpan={s1PeriodsCount + 2} className="bp-th">{sem1?.label || 'PREMIER SEMESTRE'}</th>
+                <th rowSpan={3} className="bp-th bp-black"></th>
+                <th colSpan={s2PeriodsCount + 3} className="bp-th">{sem2?.label || 'SECOND SEMESTRE'}</th>
+                <th rowSpan={3} className="bp-th bp-th-repechage">EXAMEN DE<br />REPECHAGE</th>
               </tr>
               <tr>
-                <th colSpan={2} style={{ ...thCell, textAlign: 'center' }}>TR JOURNAL</th>
-                <th rowSpan={2} style={{ ...thCell, textAlign: 'center' }}>
-                  {semestres[0]?.examLabel || 'EXAM'}
-                </th>
-                <th rowSpan={2} style={{ ...thCell, textAlign: 'center' }}>TOT.</th>
-                <th colSpan={2} style={{ ...thCell, textAlign: 'center' }}>TR JOURNAL</th>
-                <th rowSpan={2} style={{ ...thCell, textAlign: 'center' }}>
-                  {semestres[1]?.examLabel || 'EXAM'}
-                </th>
-                <th rowSpan={2} style={{ ...thCell, textAlign: 'center' }}>TOT.</th>
-                <th rowSpan={2} style={{ ...thCell, textAlign: 'center' }}>T.G</th>
+                <th colSpan={s1PeriodsCount} className="bp-th">TR JOURNAL</th>
+                <th rowSpan={2} className="bp-th">{sem1?.examLabel || 'EXAM'}</th>
+                <th rowSpan={2} className="bp-th">TOT.</th>
+                <th colSpan={s2PeriodsCount} className="bp-th">TR JOURNAL</th>
+                <th rowSpan={2} className="bp-th">{sem2?.examLabel || 'EXAM'}</th>
+                <th rowSpan={2} className="bp-th">TOT.</th>
+                <th rowSpan={2} className="bp-th">T.G</th>
               </tr>
               <tr>
-                {semestres[0]?.periods.map((p) => (
-                  <th key={p.id} style={{ ...thCell, textAlign: 'center' }}>{p.label}</th>
-                ))}
-                {semestres[1]?.periods.map((p) => (
-                  <th key={p.id} style={{ ...thCell, textAlign: 'center' }}>{p.label}</th>
-                ))}
+                {sem1?.periods.map((p) => <th key={`h1-${p.id}`} className="bp-th">{p.label}</th>)}
+                {sem2?.periods.map((p) => <th key={`h2-${p.id}`} className="bp-th">{p.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {groupMaxima.map((gm) => (
                 <Fragment key={gm.group.id}>
-                  {/* Ligne MAXIMA du groupe */}
-                  <tr style={{ background: '#e5e7eb', fontWeight: 'bold' }}>
-                    <td style={cellLeft}>MAXIMA</td>
-                    {semestres.map((sem) => {
-                      const ms = gm.maxSemester.find((x) => x.semesterId === sem.id);
-                      return (
-                        <Fragment key={`${gm.group.id}-${sem.id}`}>
-                          {sem.periods.map((p) => (
-                            <td key={`${sem.id}-${p.id}`} style={cellCenter}>{gm.maxPerPeriod}</td>
-                          ))}
-                          <td key={`${sem.id}-exam`} style={cellCenter}>{ms?.examMax ?? 0}</td>
-                          <td key={`${sem.id}-tot`} style={cellCenter}>{ms?.maxTotal ?? 0}</td>
-                        </Fragment>
-                      );
-                    })}
-                    <td style={cellCenter}>{gm.grandMax}</td>
-                    {template.showRepêchage && <td style={cellCenter}></td>}
+                  <tr className="bp-row-maxima">
+                    <td className="bp-td bp-td-left bp-bold">MAXIMA</td>
+                    {sem1 && (
+                      <>
+                        {sem1.periods.map((p) => (
+                          <td key={`m1-${p.id}`} className="bp-td bp-bold bp-center">{gm.maxPerPeriod}</td>
+                        ))}
+                        <td className="bp-td bp-bold bp-center">{gm.maxPerPeriod * 2}</td>
+                        <td className="bp-td bp-bold bp-center">{gm.maxPerPeriod * (sem1.periods.length + 2)}</td>
+                      </>
+                    )}
+                    <td className="bp-td bp-black"></td>
+                    {sem2 && (
+                      <>
+                        {sem2.periods.map((p) => (
+                          <td key={`m2-${p.id}`} className="bp-td bp-bold bp-center">{gm.maxPerPeriod}</td>
+                        ))}
+                        <td className="bp-td bp-bold bp-center">{gm.maxPerPeriod * 2}</td>
+                        <td className="bp-td bp-bold bp-center">{gm.maxPerPeriod * (sem2.periods.length + 2)}</td>
+                        <td className="bp-td bp-bold bp-center">{gm.grandMax}</td>
+                      </>
+                    )}
+                    {template.showRepêchage && <td className="bp-td bp-black-cell"></td>}
                   </tr>
 
-                  {/* Branches du groupe */}
                   {gm.group.subjects.map((sub) => {
                     const row = data.rows.find((r) => r.subject.id === sub.id);
                     return (
                       <tr key={sub.id}>
-                        <td style={cellLeft}>{sub.name}</td>
-                        {semestres.map((sem) => {
-                          const rep = (k: string) => row?.periods[`${sem.id}__${k}`];
-                          return (
-                            <Fragment key={`${sub.id}-${sem.id}`}>
-                              {sem.periods.map((p) => (
-                                <td key={`${sem.id}-${p.id}`} style={cellCenter}>{fmt(rep(p.id))}</td>
-                              ))}
-                              <td key={`${sem.id}-exam`} style={cellCenter}>{fmt(rep('EXAM'))}</td>
-                              <td key={`${sem.id}-tot`} style={cellCenter}>{row?.semesterTotals[sem.id] || 0}</td>
-                            </Fragment>
-                          );
-                        })}
-                        <td style={cellCenter}>{row?.grandTotal || 0}</td>
+                        <td className="bp-td bp-td-left">{sub.name}</td>
+                        {sem1 && (
+                          <>
+                            {sem1.periods.map((p) => (
+                              <td key={`s1-${p.id}`} className="bp-td bp-center">{fmt(row?.periods[`${sem1.id}__${p.id}`])}</td>
+                            ))}
+                            <td className="bp-td bp-center">{fmt(row?.periods[`${sem1.id}__EXAM`])}</td>
+                            <td className="bp-td bp-center">{row?.semesterTotals[sem1.id] || 0}</td>
+                          </>
+                        )}
+                        <td className="bp-td bp-black"></td>
+                        {sem2 && (
+                          <>
+                            {sem2.periods.map((p) => (
+                              <td key={`s2-${p.id}`} className="bp-td bp-center">{fmt(row?.periods[`${sem2.id}__${p.id}`])}</td>
+                            ))}
+                            <td className="bp-td bp-center">{fmt(row?.periods[`${sem2.id}__EXAM`])}</td>
+                            <td className="bp-td bp-center">{row?.semesterTotals[sem2.id] || 0}</td>
+                            <td className="bp-td bp-center">{row?.grandTotal || 0}</td>
+                          </>
+                        )}
                         {template.showRepêchage && (
-                          <td style={cellCenter}>{row?.repechage ?? ''}</td>
+                          <td className="bp-td bp-center">{row?.repechage ?? ''}</td>
                         )}
                       </tr>
                     );
@@ -1108,220 +1190,294 @@ function BulletinPrintModal({
                 </Fragment>
               ))}
 
-              {/* MAXIMA GÉNÉRAUX */}
-              <tr style={{ background: '#d1d5db', fontWeight: 'bold' }}>
-                <td style={cellLeft}>MAXIMA GENERAUX</td>
-                {semestres.map((sem) => {
-                  const semMax = periodMax * sem.periods.length + examMax;
-                  return (
-                    <Fragment key={`mg-${sem.id}`}>
-                      {sem.periods.map((p) => (
-                        <td key={`${sem.id}-${p.id}`} style={cellCenter}>{periodMax}</td>
-                      ))}
-                      <td key={`${sem.id}-exam`} style={cellCenter}>{examMax}</td>
-                      <td key={`${sem.id}-tot`} style={cellCenter}>{semMax}</td>
-                    </Fragment>
-                  );
-                })}
-                <td style={cellCenter}>{maximaGen}</td>
-                {template.showRepêchage && <td style={cellCenter}></td>}
+              <tr className="bp-row-maxgen">
+                <td className="bp-td bp-td-left bp-bold">MAXIMA GENERAUX</td>
+                {sem1 && (
+                  <>
+                    {sem1.periods.map((p) => (
+                      <td key={`mg1-${p.id}`} className="bp-td bp-bold bp-center">{periodMax}</td>
+                    ))}
+                    <td className="bp-td bp-bold bp-center">{examMax}</td>
+                    <td className="bp-td bp-bold bp-center">{periodMax * (sem1.periods.length + 2)}</td>
+                  </>
+                )}
+                <td className="bp-td bp-black"></td>
+                {sem2 && (
+                  <>
+                    {sem2.periods.map((p) => (
+                      <td key={`mg2-${p.id}`} className="bp-td bp-bold bp-center">{periodMax}</td>
+                    ))}
+                    <td className="bp-td bp-bold bp-center">{examMax}</td>
+                    <td className="bp-td bp-bold bp-center">{periodMax * (sem2.periods.length + 2)}</td>
+                    <td className="bp-td bp-bold bp-center">{maximaGen}</td>
+                  </>
+                )}
+                {template.showRepêchage && <td className="bp-td bp-black-cell"></td>}
               </tr>
 
-              {/* TOTAUX */}
               <tr>
-                <td style={cellLeft}><b>TOTAUX</b></td>
-                {semestres.map((sem) => (
-                  <Fragment key={`tot-${sem.id}`}>
-                    {sem.periods.map((p) => {
-                      const key = `${sem.id}__${p.id}`;
-                      const t = data.periodStudentTotals[key];
-                      return (
-                        <td key={`${sem.id}-${p.id}`} style={cellCenter}>
-                          {t === null || t === undefined ? '' : t}
-                        </td>
-                      );
+                <td className="bp-td bp-td-left bp-bold">TOTAUX</td>
+                {sem1 && (
+                  <>
+                    {sem1.periods.map((p) => {
+                      const t = data.periodStudentTotals[`${sem1.id}__${p.id}`];
+                      return <td key={`t1-${p.id}`} className="bp-td bp-center">{t === null || t === undefined ? '' : t}</td>;
                     })}
-                    <td style={cellCenter}>
-                      {fmt(data.periodStudentTotals[`${sem.id}__EXAM`])}
-                    </td>
-                    <td style={cellCenter}>
-                      {data.semesterTotals[sem.id].total}
-                    </td>
-                  </Fragment>
-                ))}
-                <td style={cellCenter}><b>{data.tgTotal ?? ''}</b></td>
+                    <td className="bp-td bp-center">{fmt(data.periodStudentTotals[`${sem1.id}__EXAM`])}</td>
+                    <td className="bp-td bp-center">{data.semesterTotals[sem1.id].total}</td>
+                  </>
+                )}
+                <td className="bp-td bp-black"></td>
+                {sem2 && (
+                  <>
+                    {sem2.periods.map((p) => {
+                      const t = data.periodStudentTotals[`${sem2.id}__${p.id}`];
+                      return <td key={`t2-${p.id}`} className="bp-td bp-center">{t === null || t === undefined ? '' : t}</td>;
+                    })}
+                    <td className="bp-td bp-center">{fmt(data.periodStudentTotals[`${sem2.id}__EXAM`])}</td>
+                    <td className="bp-td bp-center">{data.semesterTotals[sem2.id].total}</td>
+                    <td className="bp-td bp-center bp-bold">{data.tgTotal ?? ''}</td>
+                  </>
+                )}
                 {template.showRepêchage && (
-                  <td style={cellCenter}>
+                  <td className="bp-td bp-center">
                     {data.rows.reduce((s, r) => s + (r.repechage || 0), 0) || ''}
                   </td>
                 )}
               </tr>
 
-              {/* POURCENTAGE */}
               <tr>
-                <td style={cellLeft}><b>POURCENTAGE</b></td>
-                {semestres.map((sem) => (
-                  <Fragment key={`pct-${sem.id}`}>
-                    {sem.periods.map((p) => {
-                      const key = `${sem.id}__${p.id}`;
-                      const pct = data.periodPercentages[key];
-                      return (
-                        <td key={`${sem.id}-${p.id}`} style={cellCenter}>
-                          {pct === null || pct === undefined ? '/' : `${pct.toFixed(0)}%`}
-                        </td>
-                      );
+                <td className="bp-td bp-td-left bp-bold">POURCENTAGE</td>
+                {sem1 && (
+                  <>
+                    {sem1.periods.map((p) => {
+                      const pct = data.periodPercentages[`${sem1.id}__${p.id}`];
+                      return <td key={`p1-${p.id}`} className="bp-td bp-center">{pct === null || pct === undefined ? '/' : `${pct.toFixed(0)}%`}</td>;
                     })}
-                    <td style={cellCenter}>
-                      {(() => {
-                        const pct = data.periodPercentages[`${sem.id}__EXAM`];
-                        return pct === null || pct === undefined ? '/' : `${pct.toFixed(0)}%`;
-                      })()}
+                    <td className="bp-td bp-center">
+                      {(() => { const pct = data.periodPercentages[`${sem1.id}__EXAM`]; return pct === null || pct === undefined ? '/' : `${pct.toFixed(0)}%`; })()}
                     </td>
-                    <td style={cellCenter}>
-                      {(() => {
-                        const st = data.semesterTotals[sem.id];
-                        return st.percent === null ? '/' : `${st.percent.toFixed(0)}%`;
-                      })()}
+                    <td className="bp-td bp-center">
+                      {(() => { const st = data.semesterTotals[sem1.id]; return st.percent === null ? '/' : `${st.percent.toFixed(0)}%`; })()}
                     </td>
-                  </Fragment>
-                ))}
-                <td style={cellCenter}>
-                  <b>{data.tgPercent === null ? '/' : `${data.tgPercent.toFixed(0)}%`}</b>
-                </td>
-                {template.showRepêchage && <td style={cellCenter}></td>}
+                  </>
+                )}
+                <td className="bp-td bp-black"></td>
+                {sem2 && (
+                  <>
+                    {sem2.periods.map((p) => {
+                      const pct = data.periodPercentages[`${sem2.id}__${p.id}`];
+                      return <td key={`p2-${p.id}`} className="bp-td bp-center">{pct === null || pct === undefined ? '/' : `${pct.toFixed(0)}%`}</td>;
+                    })}
+                    <td className="bp-td bp-center">
+                      {(() => { const pct = data.periodPercentages[`${sem2.id}__EXAM`]; return pct === null || pct === undefined ? '/' : `${pct.toFixed(0)}%`; })()}
+                    </td>
+                    <td className="bp-td bp-center">
+                      {(() => { const st = data.semesterTotals[sem2.id]; return st.percent === null ? '/' : `${st.percent.toFixed(0)}%`; })()}
+                    </td>
+                    <td className="bp-td bp-center bp-bold">{data.tgPercent === null ? '/' : `${data.tgPercent.toFixed(0)}%`}</td>
+                  </>
+                )}
+                {template.showRepêchage && <td className="bp-td bp-black-cell"></td>}
               </tr>
 
-              {/* PLACE / NBRE ELEVES */}
               <tr>
-                <td style={cellLeft}><b>PLACE / NBRE ELEVES</b></td>
-                {semestres.map((sem) => (
-                  <Fragment key={`place-${sem.id}`}>
-                    {sem.periods.map((p) => (
-                      <td key={`${sem.id}-${p.id}`} style={cellCenter}>/</td>
-                    ))}
-                    <td style={cellCenter}>/</td>
-                    <td style={cellCenter}>/</td>
-                  </Fragment>
-                ))}
-                <td style={cellCenter}>
-                  <b>{data.isComplete ? `${myRank}/${allStudents.length}` : '/'}</b>
-                </td>
-                {template.showRepêchage && <td style={cellCenter}></td>}
+                <td className="bp-td bp-td-left bp-bold">PLACE / NBRE ELEVES</td>
+                {sem1 && (
+                  <>
+                    {sem1.periods.map((p) => <td key={`pl1-${p.id}`} className="bp-td bp-center">/</td>)}
+                    <td className="bp-td bp-center">/</td>
+                    <td className="bp-td bp-center">/</td>
+                  </>
+                )}
+                <td className="bp-td bp-black"></td>
+                {sem2 && (
+                  <>
+                    {sem2.periods.map((p) => <td key={`pl2-${p.id}`} className="bp-td bp-center">/</td>)}
+                    <td className="bp-td bp-center">/</td>
+                    <td className="bp-td bp-center">/</td>
+                    <td className="bp-td bp-center bp-bold">{data.isComplete ? `${myRank}/${allStudents.length}` : '/'}</td>
+                  </>
+                )}
+                {template.showRepêchage && <td className="bp-td bp-black-cell"></td>}
               </tr>
 
-              {/* APPLICATION */}
               <tr>
-                <td style={cellLeft}><b>APPLICATION</b></td>
-                <td colSpan={9} style={{ ...cellCenter, height: '16px' }}></td>
-                <td style={cellCenter}>
-                  <b>{data.isComplete ? data.appreciation : ''}</b>
-                </td>
-                {template.showRepêchage && <td style={cellCenter}></td>}
+                <td className="bp-td bp-td-left bp-bold">APPLICATION</td>
+                <td colSpan={totalDataCols} className="bp-td"></td>
+                <td className="bp-td bp-center bp-bold">{data.isComplete ? data.appreciation : ''}</td>
+                {template.showRepêchage && <td className="bp-td bp-black-cell"></td>}
               </tr>
 
-              {/* CONDUITE */}
               <tr>
-                <td style={cellLeft}><b>CONDUITE</b></td>
-                <td colSpan={9} style={{ ...cellCenter, fontSize: '8px' }}>
-                  {semestres.map((sem) => `${sem.id} : ${data.conduite[sem.id] || '—'}`).join('   |   ')}
+                <td className="bp-td bp-td-left bp-bold">CONDUITE</td>
+                <td colSpan={totalDataCols} className="bp-td bp-center" style={{ fontSize: '8px' }}>
+                  {template.semesters.map((sem) => `${sem.id} : ${data.conduite[sem.id] || '—'}`).join('   |   ')}
                 </td>
-                <td style={cellCenter}></td>
-                {template.showRepêchage && <td style={cellCenter}></td>}
+                <td className="bp-td bp-black-cell"></td>
+                {template.showRepêchage && <td className="bp-td bp-black-cell"></td>}
               </tr>
             </tbody>
           </table>
 
-          {/* Décision */}
-          <table style={{ ...blockTable, marginTop: '4px' }}>
+          <table className="bp-decision">
             <tbody>
               <tr>
-                <td style={{ ...blockCell, width: '60%', verticalAlign: 'top', fontSize: '8px' }}>
-                  <div style={{ marginBottom: '3px' }}>
-                    - L&apos;élève ne pourra passer en classe supérieure s&apos;il n&apos;a subi avec succès un examen de repêchage en : ....................................
-                  </div>
-                  <div style={{ marginBottom: '3px', textAlign: 'center' }}>
-                    .....................................................................................(1)
-                  </div>
-                  <div>- L&apos;élève passe dans la classe supérieure (1)</div>
-                  <div>- L&apos;élève double sa classe (1)</div>
+                <td className="bp-decision-left">
+                  <div>-L&apos;élève ne pourra passer en classe supérieure s&apos;il n&apos;a subi avec succès un examen de repêchage en : .......................................</div>
+                  <div style={{ textAlign: 'center', margin: '2px 0' }}>................................................................(1)</div>
+                  <div>-L&apos;élève passe dans la classe supérieure (1)</div>
+                  <div>-L&apos;élève double sa classe(1)</div>
                 </td>
-                <td style={{ ...blockCell, width: '40%', verticalAlign: 'top', fontSize: '8px' }}>
-                  <div style={{ marginBottom: '3px' }}>
-                    {config.decisionLabels.passe} (1) : {data.isComplete && data.decision === 'Passe' ? '✔' : '.........'}
+                <td className="bp-decision-right">
+                  <div>{config.decisionLabels.passe}(1) : ................</div>
+                  <div>{config.decisionLabels.double}(1) : ................</div>
+                  <div>{config.decisionLabels.echoue} : ................</div>
+                  <div style={{ marginTop: '14px', textAlign: 'center', fontWeight: 'bold' }}>
+                    Le Chef d&apos;Etablissement
                   </div>
-                  <div style={{ marginBottom: '3px' }}>
-                    {config.decisionLabels.double} (1) : {data.isComplete && data.decision === 'Double' ? '✔' : '.........'}
-                  </div>
-                  <div style={{ marginBottom: '8px' }}>
-                    {config.decisionLabels.echoue} : {data.isComplete && data.decision === 'A échoué' ? '✔' : '.........'}
-                  </div>
-                  <div style={{ textAlign: 'center', marginTop: '6px' }}>
-                    <b>Le Chef d&apos;Etablissement</b>
-                    <div style={{ height: '24px' }}></div>
-                    <div>Nom et Signature</div>
-                  </div>
+                  <div style={{ textAlign: 'center', marginTop: '4px' }}>Nom et Signature</div>
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* Pied */}
-          <div style={{ marginTop: '2px', fontSize: '7px' }}>
+          <table className="bp-signatures">
+            <tbody>
+              <tr>
+                <td className="bp-sign-cell"><b>Signature de l&apos;élève</b></td>
+                <td className="bp-sign-cell"><b>Sceau de l&apos;école</b></td>
+                <td className="bp-sign-cell">
+                  <b>Le Chef d&apos;Etablissement</b>
+                  <div style={{ fontSize: '7px' }}>Nom et Signature</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="bp-footer">
             <div>(1) Biffer la mention inutile.</div>
             <div>Note importante : Le bulletin est sans valeur s&apos;il est raturé ou surchargé.</div>
-            <div style={{ textAlign: 'right' }}>IGE/PS/026</div>
-            <div style={{ textAlign: 'center', fontStyle: 'italic', fontWeight: 'bold' }}>
-              Interdiction formelle de reproduire ce bulletin sous peine des sanctions prévues par la loi
-            </div>
+            <div className="bp-footer-right">IGE/PS/026</div>
+            <div className="bp-footer-center">Interdiction formelle de reproduire ce bulletin sous peine des sanctions prévues par la loi</div>
           </div>
-
-          {/* Signatures bas */}
-          <table style={{ ...blockTable, marginTop: '8px' }}>
-            <tbody>
-              <tr>
-                <td style={{ ...blockCell, textAlign: 'center', fontSize: '9px', verticalAlign: 'bottom', height: '46px' }}>
-                  <b>Signature de l&apos;élève</b>
-                </td>
-                <td style={{ ...blockCell, textAlign: 'center', fontSize: '9px', verticalAlign: 'bottom' }}>
-                  <b>Sceau de l&apos;école</b>
-                </td>
-                <td style={{ ...blockCell, textAlign: 'center', fontSize: '9px', verticalAlign: 'bottom' }}>
-                  <b>Le Chef d&apos;Etablissement</b>
-                  <div style={{ fontSize: '8px' }}>Nom et Signature</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
-      {/* Styles d'impression A4 Portrait */}
       <style jsx global>{`
         .bulletin-print {
           font-family: Arial, Helvetica, sans-serif;
-          font-size: 9px;
+          font-size: 8px;
           color: #000;
           background: #fff;
           padding: 4mm;
         }
+        .bulletin-print table { border-collapse: collapse; width: 100%; }
+        .bulletin-print td, .bulletin-print th { box-sizing: border-box; }
+
+        .bp-header { border: 2px solid #000; }
+        .bp-header td { padding: 4px; vertical-align: middle; }
+        .bp-header-flag { width: 22%; text-align: left; }
+        .bp-header-title { width: 56%; text-align: center; font-weight: bold; font-size: 9px; line-height: 1.35; }
+        .bp-header-armoiries { width: 22%; text-align: right; }
+        .bp-placeholder {
+          display: grid; place-items: center;
+          height: 50px; border: 1px dashed #999;
+          font-size: 7px; color: #999;
+        }
+
+        .bp-codeband {
+          display: flex; justify-content: center; gap: 2px;
+          padding: 3px 4px;
+          border: 2px solid #000; border-top: none;
+        }
+        .bp-codebox {
+          display: inline-block; width: 15px; height: 13px;
+          border: 1px solid #000;
+        }
+        .bp-smallbox {
+          display: inline-block; width: 11px; height: 11px;
+          border: 1px solid #000; vertical-align: middle; margin-right: 1px;
+        }
+
+        .bp-info { border: 2px solid #000; border-top: none; }
+        .bp-info td { padding: 3px 5px; vertical-align: top; font-size: 8px; }
+        .bp-info-left { width: 55%; border-right: 2px solid #000; }
+        .bp-info-right { width: 45%; }
+        .bp-line {
+          display: flex; align-items: center; gap: 3px;
+          padding: 1px 0; flex-wrap: wrap; min-height: 13px;
+        }
+        .bp-line-between { justify-content: space-between; }
+        .bp-fill { flex: 1; border-bottom: 1px dotted #555; min-width: 50px; }
+
+        .bp-title-table { border: 2px solid #000; border-top: none; }
+        .bp-title-table td {
+          padding: 3px 5px; text-align: center;
+          font-weight: bold; background: #f3f4f6; font-size: 8.5px;
+        }
+        .bp-title-left { width: 55%; border-right: 2px solid #000; }
+        .bp-title-right { width: 45%; }
+
+        .bp-big {
+          border: 2px solid #000; border-top: none;
+          table-layout: fixed;
+        }
+        .bp-th {
+          border: 1px solid #000;
+          padding: 2px 1px;
+          font-size: 7.5px; font-weight: bold;
+          background: #f3f4f6;
+          text-align: center;
+          vertical-align: middle;
+          line-height: 1.1;
+        }
+        .bp-th-left { text-align: left; padding-left: 4px; }
+        .bp-th-repechage {
+          background: #000; color: #fff;
+          font-size: 7.5px;
+        }
+        .bp-black { background: #000; }
+        .bp-black-cell { background: #000; }
+        .bp-td {
+          border: 1px solid #000;
+          padding: 1px 2px;
+          font-size: 7.5px;
+          height: 12px;
+          vertical-align: middle;
+        }
+        .bp-td-left { text-align: left; padding-left: 4px; }
+        .bp-center { text-align: center; }
+        .bp-bold { font-weight: bold; }
+        .bp-row-maxima td { background: #e5e7eb; }
+        .bp-row-maxgen td { background: #d1d5db; }
+
+        .bp-decision { border: 2px solid #000; border-top: none; }
+        .bp-decision td { padding: 4px 6px; font-size: 7.5px; vertical-align: top; }
+        .bp-decision-left { width: 62%; border-right: 2px solid #000; line-height: 1.5; }
+        .bp-decision-right { width: 38%; line-height: 1.6; }
+
+        .bp-signatures { border: 2px solid #000; border-top: none; }
+        .bp-sign-cell {
+          padding: 6px; text-align: center;
+          font-size: 8px; vertical-align: bottom;
+          border-right: 2px solid #000; height: 40px;
+        }
+        .bp-sign-cell:last-child { border-right: none; }
+
+        .bp-footer { padding: 2px 4px; font-size: 6.5px; line-height: 1.5; }
+        .bp-footer-right { text-align: right; }
+        .bp-footer-center { text-align: center; font-style: italic; font-weight: bold; }
+
         @media print {
-          @page {
-            size: A4 portrait;
-            margin: 6mm;
-          }
-          html, body {
-            margin: 0;
-            padding: 0;
-            background: #fff;
-          }
+          @page { size: A4 portrait; margin: 6mm; }
+          html, body { margin: 0; padding: 0; background: #fff; }
           body * { visibility: hidden; }
           .bulletin-print, .bulletin-print * { visibility: visible; }
           .bulletin-print {
-            position: absolute;
-            left: 0; top: 0;
-            width: 100%;
-            padding: 0 !important;
-            font-size: 8.5px !important;
+            position: absolute; left: 0; top: 0;
+            width: 100%; padding: 0 !important;
+            font-size: 7.5px;
           }
           .bulletin-print table { page-break-inside: auto; }
           .bulletin-print tr { page-break-inside: avoid; }
@@ -1332,114 +1488,7 @@ function BulletinPrintModal({
 }
 
 /* ============================================================
-   STYLES INLINE POUR LE BULLETIN
-   ============================================================ */
-const headerTable: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  border: '2px solid #000',
-};
-
-const headerCell: React.CSSProperties = {
-  padding: '4px 6px',
-  verticalAlign: 'middle',
-};
-
-const placeholderBox: React.CSSProperties = {
-  display: 'grid',
-  placeItems: 'center',
-  height: '50px',
-  border: '1px dashed #999',
-  fontSize: '8px',
-  color: '#999',
-};
-
-const codeBand: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'center',
-  gap: '2px',
-  padding: '3px 6px',
-  border: '2px solid #000',
-  borderTop: 'none',
-  background: '#fff',
-};
-
-const codeBox: React.CSSProperties = {
-  display: 'inline-block',
-  width: '16px',
-  height: '14px',
-  border: '1px solid #000',
-};
-
-const smallCodeBox: React.CSSProperties = {
-  display: 'inline-block',
-  width: '12px',
-  height: '12px',
-  border: '1px solid #000',
-  verticalAlign: 'middle',
-  marginRight: '1px',
-};
-
-const blockTable: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  border: '2px solid #000',
-  borderTop: 'none',
-};
-
-const blockCell: React.CSSProperties = {
-  padding: '4px 6px',
-  borderRight: '2px solid #000',
-  verticalAlign: 'top',
-};
-
-const lineRow: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '4px',
-  padding: '1px 0',
-  flexWrap: 'wrap',
-};
-
-const fillLine: React.CSSProperties = {
-  flex: 1,
-  borderBottom: '1px dotted #666',
-  minWidth: '60px',
-};
-
-const bigTable: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  border: '2px solid #000',
-  borderTop: 'none',
-  tableLayout: 'fixed',
-};
-
-const thCell: React.CSSProperties = {
-  border: '1px solid #000',
-  padding: '2px 3px',
-  fontSize: '8px',
-  fontWeight: 'bold',
-  background: '#f3f4f6',
-  verticalAlign: 'middle',
-};
-
-const cellLeft: React.CSSProperties = {
-  border: '1px solid #000',
-  padding: '2px 4px',
-  fontSize: '8px',
-  textAlign: 'left',
-};
-
-const cellCenter: React.CSSProperties = {
-  border: '1px solid #000',
-  padding: '2px 3px',
-  fontSize: '8px',
-  textAlign: 'center',
-};
-
-/* ============================================================
-   PETITS COMPOSANTS
+   Petits composants
    ============================================================ */
 function Field({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
   return (
