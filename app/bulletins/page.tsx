@@ -41,7 +41,6 @@ export default function BulletinsPage() {
   const assignedClasses = currentUser?.assignedClasses || [];
   const hasRestriction = assignedClasses.length > 0;
 
-  // ✅ TOUS LES HOOKS SONT APPELÉS ICI, TOUT EN HAUT
   const [students] = useStudents();
   const [templates, setTemplates] = useBulletinTemplates();
   const [grades, setGrades] = useGrades();
@@ -107,11 +106,7 @@ export default function BulletinsPage() {
 
       {tab === 'notes' && (
         <NotesTab
-          students={students} 
-          grades={grades} 
-          saveGrades={saveGrades} 
-          conduite={conduite} 
-          saveConduite={saveConduite}
+          students={students} grades={grades} saveGrades={saveGrades} conduite={conduite} saveConduite={saveConduite}
           getTemplate={getTemplate} assignedClasses={assignedClasses} hasRestriction={hasRestriction}
           currentClasses={currentClasses} currentOptions={currentOptions}
         />
@@ -119,10 +114,7 @@ export default function BulletinsPage() {
 
       {tab === 'bulletins' && (
         <BulletinsTab
-          students={students} 
-          grades={grades} 
-          conduite={conduite} 
-          config={config} getTemplate={getTemplate}
+          students={students} grades={grades} conduite={conduite} config={config} getTemplate={getTemplate}
           onPreview={setPreviewStudent} assignedClasses={assignedClasses} hasRestriction={hasRestriction}
           currentClasses={currentClasses} currentOptions={currentOptions}
         />
@@ -130,10 +122,7 @@ export default function BulletinsPage() {
 
       {tab === 'enseignant' && (
         <TeacherTab
-          students={students} 
-          grades={grades} 
-          saveGrades={saveGrades} 
-          getTemplate={getTemplate}
+          students={students} grades={grades} saveGrades={saveGrades} getTemplate={getTemplate}
           assignedClasses={assignedClasses} hasRestriction={hasRestriction} currentClasses={currentClasses}
           currentOptions={currentOptions}
         />
@@ -142,12 +131,9 @@ export default function BulletinsPage() {
       {previewStudent && (
         <BulletinPrintModal
           student={previewStudent}
-          allStudents={students.filter((s) => s.classe === previewStudent.classe && s.option === previewStudent.option)}
+          allStudents={students.filter((s: any) => s.classe === previewStudent.classe && s.option === previewStudent.option)}
           template={getTemplate(previewStudent.classe, previewStudent.option)}
-          grades={grades} 
-          conduite={conduite} 
-          config={config} 
-          schoolName={settings.schoolName}
+          grades={grades} conduite={conduite} config={config} schoolName={settings.schoolName}
           onClose={() => setPreviewStudent(null)}
         />
       )}
@@ -191,7 +177,7 @@ function ModelesTab({
   const addSubject = (gid: string) => { if (!tpl) return; setTpl({ groups: tpl.groups.map((g) => g.id === gid ? { ...g, subjects: [...g.subjects, { id: `sub_${Date.now()}`, name: 'Nouvelle branche' }] } : g) }); };
   const updateSubject = (gid: string, sid: string, patch: Partial<Subject>) => { if (!tpl) return; setTpl({ groups: tpl.groups.map((g) => g.id === gid ? { ...g, subjects: g.subjects.map((s) => (s.id === sid ? { ...s, ...patch } : s)) } : g) }); };
   const removeSubject = (gid: string, sid: string) => { if (!tpl) return; setTpl({ groups: tpl.groups.map((g) => g.id === gid ? { ...g, subjects: g.subjects.filter((s) => s.id !== sid) } : g) }); };
-  const updateSemester = (sid: string, patch: Partial<SemesterConfig>) => { if (!tpl) return; setTpl({ semesters: tpl.semesters.map((s) => (s.id === sid ? { ...s, ...patch } : s)) }); };
+  const updateSemester = (sid: string, patch: Partial<SemesterConfig>) => { if (!tpl) return; setTpl({ semesters: tpl.semesters.map((s: any) => (s.id === sid ? { ...s, ...patch } : s)) }); };
   const addPeriod = (sid: string) => { if (!tpl) return; const sem = tpl.semesters.find((s: any) => s.id === sid); if (!sem) return; updateSemester(sid, { periods: [...sem.periods, { id: `P${Date.now()}`, label: `${sem.periods.length + 1}°P` }] }); };
   const updatePeriod = (sid: string, pid: string, label: string) => { if (!tpl) return; const sem = tpl.semesters.find((s: any) => s.id === sid); if (!sem) return; updateSemester(sid, { periods: sem.periods.map((p: any) => (p.id === pid ? { ...p, label } : p)) }); };
   const removePeriod = (sid: string, pid: string) => { if (!tpl) return; const sem = tpl.semesters.find((s: any) => s.id === sid); if (!sem) return; updateSemester(sid, { periods: sem.periods.filter((p: any) => p.id !== pid) }); };
