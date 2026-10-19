@@ -33,7 +33,6 @@ export default function DashboardPage() {
   const [bulletinConfig] = useBulletinConfig();
   const activeYear = useActiveYear();
 
-  /* Année scolaire en cours (évite new Date() direct pendant le rendu) */
   const [anneeScolaire, setAnneeScolaire] = useState('');
   useEffect(() => {
     const y = new Date().getFullYear();
@@ -43,14 +42,16 @@ export default function DashboardPage() {
   /* ---------- Statistiques ---------- */
   const stats = useMemo(() => {
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+    
+    // 🆕 Utilisation de l'option pour calculer le bon total
     const totalDueAll = students.reduce(
-      (sum, s) => sum + totalDue(settings.tranches, s.niveau),
+      (sum, s) => sum + totalDue(settings.tranches, s.niveau, s.option),
       0,
     );
 
     const byStatus = { Payé: 0, Partiel: 0, 'Non payé': 0 };
     students.forEach((s) => {
-      const due = totalDue(settings.tranches, s.niveau);
+      const due = totalDue(settings.tranches, s.niveau, s.option);
       const paid = getStudentTotalPaid(payments, s.id);
       const st = getPaymentStatus(paid, due);
       if (st.label === 'Payé') byStatus['Payé']++;
@@ -71,7 +72,6 @@ export default function DashboardPage() {
   const alerts = useMemo(() => {
     const list: { id: string; icon: string; level: 'red' | 'amber' | 'blue'; text: string; href: string; cta: string }[] = [];
 
-    // 1. Élèves non payés
     const notPaid = students.filter(
       (s) => getStudentTotalPaid(payments, s.id) === 0,
     );
@@ -86,9 +86,8 @@ export default function DashboardPage() {
       });
     }
 
-    // 2. Élèves avec solde restant
     const partial = students.filter((s) => {
-      const due = totalDue(settings.tranches, s.niveau);
+      const due = totalDue(settings.tranches, s.niveau, s.option);
       const paid = getStudentTotalPaid(payments, s.id);
       return paid > 0 && paid < due;
     });
@@ -103,7 +102,6 @@ export default function DashboardPage() {
       });
     }
 
-    // 3. Événements dans les 7 prochains jours
     const today = ymd(new Date());
     const in7days = new Date();
     in7days.setDate(in7days.getDate() + 7);
@@ -120,7 +118,6 @@ export default function DashboardPage() {
       });
     }
 
-    // 4. Personnel en congé
     const onLeave = staff.filter((s) => s.statut === 'En congé');
     if (onLeave.length > 0) {
       list.push({
@@ -133,7 +130,6 @@ export default function DashboardPage() {
       });
     }
 
-    // 5. Bulletins incomplets
     let incompleteClasses = 0;
     templates.forEach((tpl) => {
       const classStudents = students.filter(
@@ -179,7 +175,6 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      {/* Bandeau année active */}
       {activeYear && (
         <section className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <span className="font-semibold">🟢 Année active :</span>
@@ -191,7 +186,6 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Alertes */}
       {alerts.length > 0 && (
         <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -221,7 +215,6 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Effectifs */}
       <section className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Total élèves" value={stats.totalStudents} accent="indigo" />
         <StatCard label="Élèves à jour" value={stats.byStatus['Payé']} accent="emerald" />
@@ -229,14 +222,12 @@ export default function DashboardPage() {
         <StatCard label="Non payés" value={stats.byStatus['Non payé']} accent="red" />
       </section>
 
-      {/* Finances */}
       <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <MoneyCard label="Total attendu" value={formatMoney(stats.totalDueAll)} color="from-slate-500 to-slate-600" />
         <MoneyCard label="Total encaissé" value={formatMoney(stats.totalPaid)} color="from-emerald-500 to-emerald-600" />
         <MoneyCard label="Solde restant" value={formatMoney(stats.balance)} color="from-red-500 to-red-600" />
       </section>
 
-      {/* Statuts + actions */}
       <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -262,7 +253,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* 2 colonnes */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">

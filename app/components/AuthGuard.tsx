@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   generateRecoveryCode,
   hashPassword,
-  ROLE_PERMISSIONS,
+  getUserPermissions,
   useRecoveryCode,
   useSession,
   useUsers,
@@ -20,7 +20,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const [session] = useSession();
-  const [, setUsers] = useUsers();
+  const [users, setUsers] = useUsers();
   const [, setRecoveryCode] = useRecoveryCode();
   const { status } = useLicense();
   const [ready, setReady] = useState(false);
@@ -46,11 +46,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
       if (storedUsers.length > 0) {
         const needsMigration = storedUsers.some(
-          (u) =>
-            u.email === undefined ||
-            u.customPermissions === undefined ||
-            u.resetCode === undefined ||
-            u.assignedClasses === undefined,
+          (u) => u.email === undefined || u.customPermissions === undefined || u.resetCode === undefined || u.assignedClasses === undefined,
         );
         if (needsMigration) {
           storedUsers = storedUsers.map((u) => ({
@@ -69,19 +65,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (storedUsers.length === 0) {
         const hash = await hashPassword('admin123');
         const admin: UserAccount = {
-          id: crypto.randomUUID(),
-          username: 'admin',
-          fullName: 'Administrateur',
-          email: '',
-          role: 'Administrateur',
-          passwordHash: hash,
-          active: true,
-          createdAt: new Date().toISOString(),
-          lastLoginAt: '',
-          customPermissions: null,
-          resetCode: null,
-          resetCodeExpiry: null,
-          assignedClasses: [],
+          id: crypto.randomUUID(), username: 'admin', fullName: 'Administrateur', email: '', role: 'Administrateur', passwordHash: hash, active: true, createdAt: new Date().toISOString(), lastLoginAt: '', customPermissions: null, resetCode: null, resetCodeExpiry: null, assignedClasses: [],
         };
         window.localStorage.setItem(USERS_KEY, JSON.stringify([admin]));
         if (!cancelled) setUsers([admin]);
@@ -97,7 +81,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     })();
 
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -121,19 +104,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       } else if (session && path === '/login') {
         router.replace('/');
       } else if (session && path === '/') {
-        // 🆕 Redirection si pas accès au Dashboard
-        const perms = ROLE_PERMISSIONS[session.role];
-        if (!perms.includes('dashboard.view')) {
-          if (perms.includes('eleves.view')) router.replace('/eleves');
-          else if (perms.includes('paiements.view')) router.replace('/paiements');
-          else if (perms.includes('bulletins.view')) router.replace('/bulletins');
-          else if (perms.includes('personnel.view')) router.replace('/personnel');
-          else if (perms.includes('vie.view')) router.replace('/vie-scolaire');
-          else if (perms.includes('parametres.view')) router.replace('/parametres');
+        // 🆕 Redirection intelligente basée sur les permissions personnalisées
+        const currentUser = users.find((u) => u.id === session.userId);
+        if (currentUser) {
+          const perms = getUserPermissions(currentUser);
+          if (!perms.includes('dashboard.view')) {
+            if (perms.includes('eleves.view')) router.replace('/eleves');
+            else if (perms.includes('paiements.view')) router.replace('/paiements');
+            else if (perms.includes('bulletins.view')) router.replace('/bulletins');
+            else if (perms.includes('personnel.view')) router.replace('/personnel');
+            else if (perms.includes('vie.view')) router.replace('/vie-scolaire');
+            else if (perms.includes('parametres.view')) router.replace('/parametres');
+          }
         }
       }
     }
-  }, [ready, status, session, path, router]);
+  }, [ready, status, session, path, router, users]);
 
   if (!ready || !status) {
     return (
@@ -147,19 +133,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (status.isExpired && path !== '/licence') {
-    return (
-      <div className="grid min-h-screen place-items-center bg-slate-50">
-        <p className="text-sm text-slate-500">Licence expirée — redirection…</p>
-      </div>
-    );
+    return <div className="grid min-h-screen place-items-center bg-slate-50"><p className="text-sm text-slate-500">Licence expirée — redirection…</p></div>;
   }
 
   if (!status.isExpired && !session && !PUBLIC_ROUTES.includes(path)) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-slate-50">
-        <p className="text-sm text-slate-500">Redirection…</p>
-      </div>
-    );
+    return <div className="grid min-h-screen place-items-center bg-slate-50"><p className="text-sm text-slate-500">Redirection…</p></div>;
   }
 
   return <>{children}</>;

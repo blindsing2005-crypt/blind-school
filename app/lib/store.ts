@@ -59,6 +59,7 @@ export interface TrancheSetting {
   amountMaternelle: number;
   amountPrimaire: number;
   amountSecondaire: number;
+  amountOptions?: Record<string, number>; // 🆕 Tarifs par option
   startDate: string;
   endDate: string;
 }
@@ -78,6 +79,8 @@ export interface SchoolSettings {
   schoolLogo: string;
   allowOffPeriodPayment: boolean;
   tranches: TrancheSetting[];
+  classes: Record<string, string[]>; // 🆕 Classes dynamiques
+  options: string[];                 // 🆕 Options dynamiques
 }
 
 export const STORAGE_KEYS = {
@@ -92,62 +95,47 @@ export const STORAGE_KEYS = {
 export const NIVEAUX = ['Maternelle', 'Primaire', 'Secondaire'] as const;
 export type Niveau = (typeof NIVEAUX)[number];
 
-export const CLASSES: Record<Niveau, string[]> = {
+// Valeurs par défaut si l'utilisateur n'a rien configuré
+export const DEFAULT_CLASSES: Record<Niveau, string[]> = {
   Maternelle: ['1ère Maternelle', '2ème Maternelle', '3ème Maternelle'],
-  Primaire: [
-    '1ère Primaire', '2ème Primaire', '3ème Primaire',
-    '4ème Primaire', '5ème Primaire', '6ème Primaire',
-  ],
-  Secondaire: [
-    '7ème A', '7ème B', '8ème A', '8ème B',
-    '1ère A', '1ère B', '2ème A', '2ème B',
-    '3ème A', '3ème B', '4ème A', '4ème B',
-  ],
+  Primaire: ['1ère Primaire', '2ème Primaire', '3ème Primaire', '4ème Primaire', '5ème Primaire', '6ème Primaire'],
+  Secondaire: ['7ème A', '7ème B', '8ème A', '8ème B', '1ère A', '1ère B', '2ème A', '2ème B', '3ème A', '3ème B', '4ème A', '4ème B'],
 };
 
-export const OPTIONS = [
-  'Scientifique', 'Littéraire', 'Pédagogique',
-  'Mécanique Auto', 'Mécanique Générale', 'Électricité',
-  'Commerciale et Gestion', 'Coupe et Couture', 'Construction',
-  'Informatique', 'Électronique',
-] as const;
+export const DEFAULT_OPTIONS = [
+  'Scientifique', 'Littéraire', 'Pédagogique', 'Mécanique Auto', 'Mécanique Générale', 
+  'Électricité', 'Commerciale et Gestion', 'Coupe et Couture', 'Construction', 
+  'Informatique', 'Électronique'
+];
 
 export const CLASSES_AVEC_OPTION = new Set([
-  '1ère A', '1ère B', '2ème A', '2ème B',
-  '3ème A', '3ème B', '4ème A', '4ème B',
+  '1ère A', '1ère B', '2ème A', '2ème B', '3ème A', '3ème B', '4ème A', '4ème B',
 ]);
 
 export const classeAvecOption = (classe: string) => CLASSES_AVEC_OPTION.has(classe);
 
-export const TRANCHE_OPTIONS = [
-  '1ère tranche', '2ème tranche', '3ème tranche', 'Solde final', 'Autre',
-] as const;
-
+export const TRANCHE_OPTIONS = ['1ère tranche', '2ème tranche', '3ème tranche', 'Solde final', 'Autre'] as const;
 export const PAYMENT_METHODS = ['Espèces', 'Mobile Money', 'Virement', 'Chèque'] as const;
 
 const ANNEE = new Date().getFullYear();
 
 export const DEFAULT_TRANCHES: TrancheSetting[] = [
-  { id: '1', label: '1ère tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: `${ANNEE}-09-01`, endDate: `${ANNEE}-10-31` },
-  { id: '2', label: '2ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: `${ANNEE}-11-01`, endDate: `${ANNEE}-12-31` },
-  { id: '3', label: '3ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: `${ANNEE + 1}-01-01`, endDate: `${ANNEE + 1}-02-28` },
-  { id: '4', label: '4ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: `${ANNEE + 1}-03-01`, endDate: `${ANNEE + 1}-04-30` },
-  { id: '5', label: '5ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: `${ANNEE + 1}-05-01`, endDate: `${ANNEE + 1}-06-30` },
-  { id: '6', label: '6ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: '', endDate: '' },
-  { id: '7', label: '7ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, startDate: '', endDate: '' },
+  { id: '1', label: '1ère tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: `${ANNEE}-09-01`, endDate: `${ANNEE}-10-31` },
+  { id: '2', label: '2ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: `${ANNEE}-11-01`, endDate: `${ANNEE}-12-31` },
+  { id: '3', label: '3ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: `${ANNEE + 1}-01-01`, endDate: `${ANNEE + 1}-02-28` },
+  { id: '4', label: '4ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: `${ANNEE + 1}-03-01`, endDate: `${ANNEE + 1}-04-30` },
+  { id: '5', label: '5ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: `${ANNEE + 1}-05-01`, endDate: `${ANNEE + 1}-06-30` },
+  { id: '6', label: '6ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: '', endDate: '' },
+  { id: '7', label: '7ème tranche', amountMaternelle: 30000, amountPrimaire: 50000, amountSecondaire: 70000, amountOptions: {}, startDate: '', endDate: '' },
 ];
-
-export const DEFAULT_TUITION: Record<string, number> = {
-  Maternelle: 210000,
-  Primaire: 350000,
-  Secondaire: 490000,
-};
 
 export const DEFAULT_SCHOOL_SETTINGS: SchoolSettings = {
   schoolName: 'BLIND SCHOOL',
   schoolLogo: '',
   allowOffPeriodPayment: false,
   tranches: DEFAULT_TRANCHES,
+  classes: DEFAULT_CLASSES,
+  options: [...DEFAULT_OPTIONS],
 };
 
 /* ---------- Hook localStorage partagé ---------- */
@@ -203,89 +191,56 @@ function usePersistentState<T>(
   return [value, set];
 }
 
-/* ---------- Étudiants (migration auto) ---------- */
+/* ---------- Étudiants ---------- */
 export const useStudents = () => {
   const [students, setStudents] = usePersistentState<Student[]>(STORAGE_KEYS.students, []);
-  useEffect(() => {
-    if (students.some((s) => !s.statut || s.anneeScolaireId === undefined || s.ecoleProvenance === undefined)) {
-      setStudents((list) =>
-        list.map((s) => ({
-          ...s,
-          statut: s.statut || ('Actif' as StudentStatus),
-          anneeScolaireId: s.anneeScolaireId ?? '',
-          ecoleProvenance: s.ecoleProvenance ?? '',
-          professionResponsable: s.professionResponsable ?? '',
-        })),
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   return [students, setStudents] as const;
 };
 
 /* ---------- Paiements ---------- */
 export const usePayments = () => {
   const [payments, setPayments] = usePersistentState<Payment[]>(STORAGE_KEYS.payments, []);
-  useEffect(() => {
-    if (payments.some((p) => p.anneeScolaireId === undefined)) {
-      setPayments((list) => list.map((p) => ({ ...p, anneeScolaireId: p.anneeScolaireId ?? '' })));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   return [payments, setPayments] as const;
 };
 
-/* ---------- École + migration tranches ---------- */
+/* ---------- École ---------- */
 export const useSchoolSettings = () => {
   const [settings, setSettings] = usePersistentState<SchoolSettings>(
     STORAGE_KEYS.settings,
     DEFAULT_SCHOOL_SETTINGS,
   );
 
+  // Migrations
   useEffect(() => {
-    if (!settings.tranches || settings.tranches.length === 0) return;
-    const needsMigration = settings.tranches.some(
-      (t) => {
-        const legacy = t as unknown as { amountMaternelle?: number; amount?: number };
-        return legacy.amountMaternelle === undefined;
-      },
-    );
-    if (!needsMigration) return;
-    setSettings((s) => ({
-      ...s,
-      tranches: s.tranches.map((t) => {
-        const legacy = t as unknown as { amount?: number };
-        const fallback = legacy.amount ?? 50000;
-        return {
-          id: t.id,
-          label: t.label,
-          amountMaternelle: t.amountMaternelle ?? fallback,
-          amountPrimaire: t.amountPrimaire ?? fallback,
-          amountSecondaire: t.amountSecondaire ?? fallback,
-          startDate: t.startDate ?? '',
-          endDate: t.endDate ?? '',
-        };
-      }),
-    }));
+    let needsMigration = false;
+    const newSettings = { ...settings };
+
+    if (!settings.classes) {
+      newSettings.classes = DEFAULT_CLASSES;
+      needsMigration = true;
+    }
+    if (!settings.options) {
+      newSettings.options = [...DEFAULT_OPTIONS];
+      needsMigration = true;
+    }
+    if (settings.tranches) {
+      const tranchesMigrated = settings.tranches.map(t => {
+        if (t.amountOptions === undefined) {
+          needsMigration = true;
+          return { ...t, amountOptions: {} };
+        }
+        return t;
+      });
+      newSettings.tranches = tranchesMigrated;
+    }
+
+    if (needsMigration) {
+      setSettings(newSettings);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return [settings, setSettings] as const;
-};
-
-/* ---------- useTuition (par niveau) ---------- */
-export const useTuition = (): [
-  Record<string, number>,
-  (v: Record<string, number> | ((p: Record<string, number>) => Record<string, number>)) => void,
-] => {
-  const [settings] = useSchoolSettings();
-  const tuition: Record<string, number> = {
-    Maternelle: settings.tranches.reduce((s, t) => s + (t.amountMaternelle || 0), 0),
-    Primaire: settings.tranches.reduce((s, t) => s + (t.amountPrimaire || 0), 0),
-    Secondaire: settings.tranches.reduce((s, t) => s + (t.amountSecondaire || 0), 0),
-  };
-  const setTuition = () => { /* no-op */ };
-  return [tuition, setTuition];
 };
 
 /* ---------- Années scolaires ---------- */
@@ -321,16 +276,21 @@ export function nextReceiptNumber(payments: Payment[]): string {
   return `REC-${year}-${String(payments.length + 1).padStart(5, '0')}`;
 }
 
-export function trancheAmountFor(t: TrancheSetting, niveau: string): number {
+export function trancheAmountFor(t: TrancheSetting, niveau: string, option?: string): number {
   if (niveau === 'Maternelle') return t.amountMaternelle || 0;
   if (niveau === 'Primaire') return t.amountPrimaire || 0;
-  if (niveau === 'Secondaire') return t.amountSecondaire || 0;
+  if (niveau === 'Secondaire') {
+    if (option && t.amountOptions && t.amountOptions[option] !== undefined) {
+      return t.amountOptions[option];
+    }
+    return t.amountSecondaire || 0;
+  }
   return 0;
 }
 
-export function totalDue(tranches: TrancheSetting[], niveau?: string): number {
+export function totalDue(tranches: TrancheSetting[], niveau?: string, option?: string): number {
   if (niveau) {
-    return tranches.reduce((s, t) => s + trancheAmountFor(t, niveau), 0);
+    return tranches.reduce((s, t) => s + trancheAmountFor(t, niveau, option), 0);
   }
   return tranches.reduce((s, t) => s + (t.amountPrimaire || 0), 0);
 }
@@ -358,39 +318,13 @@ export function getStudentTotalPaid(payments: Payment[], studentId: string): num
   return payments.filter((p) => p.studentId === studentId).reduce((s, p) => s + p.amount, 0);
 }
 
-export function getStudentStatus(paid: number, due: number): PaymentStatus {
-  return getPaymentStatus(paid, due);
-}
-
-export function getTrancheStatus(paid: number, due: number): PaymentStatus {
-  return getPaymentStatus(paid, due);
-}
-
-export function nextClass(currentClasse: string): string | null {
-  const order: string[] = [
-    '1ère Maternelle', '2ème Maternelle', '3ème Maternelle',
-    '1ère Primaire', '2ème Primaire', '3ème Primaire', '4ème Primaire', '5ème Primaire', '6ème Primaire',
-    '7ème A', '7ème B', '8ème A', '8ème B',
-    '1ère A', '1ère B', '2ème A', '2ème B',
-    '3ème A', '3ème B', '4ème A', '4ème B',
-  ];
+export function nextClass(currentClasse: string, allClasses: Record<string, string[]>): string | null {
+  const order: string[] = [];
+  ['Maternelle', 'Primaire', 'Secondaire'].forEach(niv => {
+    if (allClasses[niv]) order.push(...allClasses[niv]);
+  });
+  
   const i = order.indexOf(currentClasse);
   if (i === -1 || i === order.length - 1) return null;
   return order[i + 1];
-}
-
-export function formatYearLabel(start: string, end: string): string {
-  if (!start || !end) return 'Année scolaire';
-  const y1 = new Date(start).getFullYear();
-  const y2 = new Date(end).getFullYear();
-  return `${y1} - ${y2}`;
-}
-
-export function getPrevYearLabel(
-  student: Student,
-  years: SchoolYear[],
-): string {
-  if (!student.previousYearId) return '—';
-  const y = years.find((x) => x.id === student.previousYearId);
-  return y?.label || '—';
 }

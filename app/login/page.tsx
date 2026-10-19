@@ -5,7 +5,7 @@ import {
   checkRecoveryCode,
   hashPassword,
   requestReset,
-  ROLE_PERMISSIONS,
+  getUserPermissions,
   useRecoveryCode,
   useSession,
   useUsers,
@@ -54,21 +54,11 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
-      setUsers((list) =>
-        list.map((u) =>
-          u.id === user.id ? { ...u, lastLoginAt: new Date().toISOString() } : u,
-        ),
-      );
-      setSession({
-        userId: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        role: user.role,
-        loginAt: new Date().toISOString(),
-      });
+      setUsers((list) => list.map((u) => u.id === user.id ? { ...u, lastLoginAt: new Date().toISOString() } : u));
+      setSession({ userId: user.id, username: user.username, fullName: user.fullName, role: user.role, loginAt: new Date().toISOString() });
 
-      // 🆕 Redirection intelligente selon les permissions
-      const perms = ROLE_PERMISSIONS[user.role];
+      // 🆕 Redirection intelligente basée sur les permissions personnalisées
+      const perms = getUserPermissions(user);
       let target = '/';
       if (!perms.includes('dashboard.view')) {
         if (perms.includes('eleves.view')) target = '/eleves';
@@ -111,11 +101,7 @@ export default function LoginPage() {
     const result = requestReset(users, identifier);
     if ('error' in result) { setEmailError(result.error); return; }
     const { user, code } = result;
-    setUsers((list) =>
-      list.map((u) =>
-        u.id === user.id ? { ...u, resetCode: code, resetCodeExpiry: new Date(Date.now() + 15 * 60 * 1000).toISOString() } : u,
-      ),
-    );
+    setUsers((list) => list.map((u) => u.id === user.id ? { ...u, resetCode: code, resetCodeExpiry: new Date(Date.now() + 15 * 60 * 1000).toISOString() } : u));
     setFoundUser(user);
     setSentCode(code);
     setEmailStep('verify');
@@ -135,13 +121,7 @@ export default function LoginPage() {
     if (emailPwd !== emailPwd2) { setEmailError('Les deux mots de passe ne correspondent pas.'); return; }
     if (!foundUser) return;
     const newHash = await hashPassword(emailPwd);
-    setUsers((list) =>
-      list.map((u) =>
-        u.id === foundUser.id
-          ? { ...u, passwordHash: newHash, resetCode: null, resetCodeExpiry: null }
-          : u,
-      ),
-    );
+    setUsers((list) => list.map((u) => u.id === foundUser.id ? { ...u, passwordHash: newHash, resetCode: null, resetCodeExpiry: null } : u));
     setEmailStep('done');
   };
 
@@ -163,44 +143,19 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800">❌ {error}</div>
-          )}
-
+          {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800">❌ {error}</div>}
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-600">Nom d&apos;utilisateur</span>
-            <input
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoFocus required placeholder="ex : admin"
-            />
+            <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required placeholder="ex : admin" />
           </label>
-
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-600">Mot de passe</span>
-            <input
-              type="password"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required placeholder="••••••••"
-            />
+            <input type="password" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" />
           </label>
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:bg-slate-400"
-          >
+          <button type="submit" disabled={busy} className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:bg-slate-400">
             {busy ? 'Connexion…' : 'Se connecter'}
           </button>
-
-          <button
-            type="button"
-            onClick={() => setShowRecovery(true)}
-            className="block w-full text-center text-xs font-medium text-indigo-600 hover:underline"
-          >
+          <button type="button" onClick={() => setShowRecovery(true)} className="block w-full text-center text-xs font-medium text-indigo-600 hover:underline">
             Mot de passe oublié ?
           </button>
         </form>
@@ -208,7 +163,6 @@ export default function LoginPage() {
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
           <p className="mb-1 font-semibold">🔑 Première connexion</p>
           <p>Utilisateur : <b>admin</b> — Mot de passe : <b>admin123</b></p>
-          <p className="mt-1 italic">Changez ce mot de passe dès que possible dans Utilisateurs.</p>
         </div>
       </div>
 
@@ -217,219 +171,77 @@ export default function LoginPage() {
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
             <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
               <h3 className="font-semibold">🔑 Récupération de mot de passe</h3>
-              <p className="text-xs text-slate-500">Deux méthodes disponibles</p>
             </div>
-
             <div className="flex border-b border-slate-200">
-              <button
-                onClick={() => setRecoveryTab('email')}
-                className={`flex-1 px-4 py-2.5 text-xs font-medium transition ${
-                  recoveryTab === 'email' ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                📧 Par email / identifiant
-              </button>
-              <button
-                onClick={() => setRecoveryTab('code')}
-                className={`flex-1 px-4 py-2.5 text-xs font-medium transition ${
-                  recoveryTab === 'code' ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                🔐 Code de secours
-              </button>
+              <button onClick={() => setRecoveryTab('email')} className={`flex-1 px-4 py-2.5 text-xs font-medium transition ${recoveryTab === 'email' ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>📧 Par email</button>
+              <button onClick={() => setRecoveryTab('code')} className={`flex-1 px-4 py-2.5 text-xs font-medium transition ${recoveryTab === 'code' ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>🔐 Code de secours</button>
             </div>
-
             {recoveryTab === 'email' && (
               <div className="space-y-4 p-5">
                 {emailStep === 'request' && (
                   <>
                     <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Nom d&apos;utilisateur ou email</span>
-                      <input
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={identifier}
-                        onChange={(e) => setIdentifier(e.target.value)}
-                        autoFocus
-                        placeholder="ex : admin ou admin@ecole.cd"
-                      />
+                      <span className="mb-1 block text-xs font-medium text-slate-600">Identifiant ou email</span>
+                      <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoFocus />
                     </label>
-                    {emailError && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {emailError}</div>
-                    )}
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
-                      💡 Sans serveur d&apos;email, le code sera <b>affiché à l&apos;écran</b> à l&apos;étape suivante.
-                    </div>
+                    {emailError && <div className="text-xs text-red-600">❌ {emailError}</div>}
                     <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                      <button onClick={closeRecovery} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                        Annuler
-                      </button>
-                      <button onClick={handleEmailRequest} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Envoyer le code
-                      </button>
+                      <button onClick={closeRecovery} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Annuler</button>
+                      <button onClick={handleEmailRequest} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm text-white">Envoyer</button>
                     </div>
                   </>
                 )}
-
                 {emailStep === 'verify' && (
                   <>
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-                      ✅ Code généré pour <b>{foundUser?.username}</b>
-                      {foundUser?.email && <> ({foundUser.email})</>}.
+                    <div className="text-center p-4 bg-indigo-50 rounded-lg">
+                      <p className="text-[10px] text-indigo-600 uppercase">Simulation Email</p>
+                      <p className="font-mono text-3xl font-bold tracking-widest text-indigo-900">{sentCode}</p>
                     </div>
-                    <div className="rounded-lg border-2 border-dashed border-indigo-300 bg-indigo-50 p-4 text-center">
-                      <p className="mb-1 text-[10px] uppercase tracking-wider text-indigo-600">
-                        Simulation d&apos;envoi email
-                      </p>
-                      <p className="font-mono text-3xl font-bold tracking-[0.3em] text-indigo-900">
-                        {sentCode}
-                      </p>
-                    </div>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Saisissez le code</span>
-                      <input
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-widest outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={enteredCode}
-                        onChange={(e) => setEnteredCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        autoFocus
-                        placeholder="000000"
-                      />
-                    </label>
-                    {emailError && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {emailError}</div>
-                    )}
-                    <div className="flex justify-between gap-3 border-t border-slate-100 pt-4">
-                      <button onClick={() => { setEmailStep('request'); setSentCode(''); setEnteredCode(''); setEmailError(''); }} className="text-xs font-medium text-slate-500 hover:underline">
-                        ← Recommencer
-                      </button>
-                      <button onClick={handleEmailVerify} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Vérifier
-                      </button>
+                    <input className="w-full text-center tracking-widest text-lg rounded-lg border border-slate-300 p-2" value={enteredCode} onChange={(e) => setEnteredCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" />
+                    {emailError && <div className="text-xs text-red-600">❌ {emailError}</div>}
+                    <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                      <button onClick={() => setEmailStep('request')} className="text-xs text-slate-500">← Retour</button>
+                      <button onClick={handleEmailVerify} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm text-white">Vérifier</button>
                     </div>
                   </>
                 )}
-
                 {emailStep === 'newpwd' && (
                   <>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Nouveau mot de passe</span>
-                      <input
-                        type="password"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={emailPwd}
-                        onChange={(e) => setEmailPwd(e.target.value)}
-                        autoFocus
-                        placeholder="••••••••"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Confirmer</span>
-                      <input
-                        type="password"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={emailPwd2}
-                        onChange={(e) => setEmailPwd2(e.target.value)}
-                        placeholder="••••••••"
-                      />
-                    </label>
-                    {emailError && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {emailError}</div>
-                    )}
-                    <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                      <button onClick={closeRecovery} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                        Annuler
-                      </button>
-                      <button onClick={handleEmailNewPwd} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                        Réinitialiser
-                      </button>
+                    <input type="password" className="w-full rounded-lg border border-slate-300 p-2 text-sm" value={emailPwd} onChange={(e) => setEmailPwd(e.target.value)} placeholder="Nouveau mot de passe" />
+                    <input type="password" className="w-full rounded-lg border border-slate-300 p-2 text-sm" value={emailPwd2} onChange={(e) => setEmailPwd2(e.target.value)} placeholder="Confirmer" />
+                    {emailError && <div className="text-xs text-red-600">❌ {emailError}</div>}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <button onClick={handleEmailNewPwd} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm text-white">Réinitialiser</button>
                     </div>
                   </>
                 )}
-
                 {emailStep === 'done' && (
-                  <>
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-center">
-                      <div className="mb-2 text-4xl">✅</div>
-                      <p className="font-semibold text-emerald-900">Mot de passe réinitialisé</p>
-                      <p className="mt-1 text-xs text-emerald-800">
-                        Vous pouvez maintenant vous connecter avec <b>{foundUser?.username}</b>.
-                      </p>
-                    </div>
-                    <div className="flex justify-center border-t border-slate-100 pt-4">
-                      <button onClick={closeRecovery} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Retour à la connexion
-                      </button>
-                    </div>
-                  </>
+                  <div className="text-center p-4">
+                    <div className="text-4xl mb-2">✅</div>
+                    <button onClick={closeRecovery} className="mt-4 rounded-lg bg-indigo-600 px-5 py-2 text-sm text-white">Fermer</button>
+                  </div>
                 )}
               </div>
             )}
-
             {recoveryTab === 'code' && (
               <div className="space-y-4 p-5">
                 {globalStep === 'code' && (
                   <>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Code de récupération</span>
-                      <input
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-widest outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={globalCode}
-                        onChange={(e) => setGlobalCode(e.target.value.toUpperCase())}
-                        autoFocus
-                        placeholder="XXXX-XXXX-XXXX"
-                      />
-                    </label>
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
-                      💡 Le code est affiché dans <b>Utilisateurs &amp; Rôles</b> quand un admin est connecté.
-                    </div>
-                    {globalError && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {globalError}</div>
-                    )}
-                    <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                      <button onClick={closeRecovery} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                        Annuler
-                      </button>
-                      <button onClick={handleGlobalVerify} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Vérifier
-                      </button>
+                    <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-widest outline-none" value={globalCode} onChange={(e) => setGlobalCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" />
+                    {globalError && <div className="text-xs text-red-600">❌ {globalError}</div>}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <button onClick={closeRecovery} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Annuler</button>
+                      <button onClick={handleGlobalVerify} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm text-white">Vérifier</button>
                     </div>
                   </>
                 )}
                 {globalStep === 'pwd' && (
                   <>
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                      ✅ Code correct. Choisissez un nouveau mot de passe administrateur.
-                    </div>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Nouveau mot de passe</span>
-                      <input
-                        type="password"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={globalPwd}
-                        onChange={(e) => setGlobalPwd(e.target.value)}
-                        autoFocus
-                        placeholder="••••••••"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-600">Confirmer</span>
-                      <input
-                        type="password"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        value={globalPwd2}
-                        onChange={(e) => setGlobalPwd2(e.target.value)}
-                        placeholder="••••••••"
-                      />
-                    </label>
-                    {globalError && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {globalError}</div>
-                    )}
-                    <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                      <button onClick={closeRecovery} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                        Annuler
-                      </button>
-                      <button onClick={handleGlobalReset} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                        Réinitialiser
-                      </button>
+                    <input type="password" className="w-full rounded-lg border border-slate-300 p-2 text-sm" value={globalPwd} onChange={(e) => setGlobalPwd(e.target.value)} placeholder="Nouveau mot de passe admin" />
+                    <input type="password" className="w-full rounded-lg border border-slate-300 p-2 text-sm" value={globalPwd2} onChange={(e) => setGlobalPwd2(e.target.value)} placeholder="Confirmer" />
+                    {globalError && <div className="text-xs text-red-600">❌ {globalError}</div>}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <button onClick={handleGlobalReset} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm text-white">Réinitialiser</button>
                     </div>
                   </>
                 )}
