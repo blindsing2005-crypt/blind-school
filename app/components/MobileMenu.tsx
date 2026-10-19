@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useSchoolSettings, useActiveYear } from '../lib/store';
 import { useAuth, type Permission } from '../lib/auth';
 import { useLicense, computeStatus } from '../lib/license';
+import GlobalSearch from './GlobalSearch';
 
 const NAV: { href: string; label: string; icon: string; perm: Permission }[] = [
   { href: '/', label: 'Tableau de bord', icon: '📊', perm: 'dashboard.view' },
@@ -12,7 +13,7 @@ const NAV: { href: string; label: string; icon: string; perm: Permission }[] = [
   { href: '/paiements', label: 'Paiements & Minerval', icon: '💳', perm: 'paiements.view' },
   { href: '/rapports', label: 'Rapports financiers', icon: '💰', perm: 'rapports.view' },
   { href: '/personnel', label: 'Personnel & Enseignants', icon: '👨‍🏫', perm: 'personnel.view' },
-  { href: '/bulletins', label: 'Bulletins & Notes', icon: '📄', perm: 'dashboard.view' },
+  { href: '/bulletins', label: 'Bulletins & Notes', icon: '📄', perm: 'bulletins.view' },
   { href: '/vie-scolaire', label: 'Vie scolaire', icon: '📅', perm: 'vie.view' },
   { href: '/parametres', label: 'Configuration', icon: '⚙️', perm: 'parametres.view' },
   { href: '/utilisateurs', label: 'Utilisateurs & Rôles', icon: '🔐', perm: 'utilisateurs.view' },
@@ -74,15 +75,16 @@ export default function MobileMenu() {
 
   const visibleNav = NAV.filter((item) => can(item.perm));
 
-  if (path === '/login' || path === '/licence') return null;
+  if (path === '/login' || path === '/licence' || path === '/super-admin') return null;
 
   return (
     <>
+      {/* Barre supérieure mobile */}
       <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:hidden">
         <button
           onClick={() => setOpen(true)}
           aria-label="Ouvrir le menu"
-          className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <line x1="3" y1="6" x2="21" y2="6" />
@@ -92,10 +94,9 @@ export default function MobileMenu() {
         </button>
 
         {logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" className="h-8 w-8 rounded-lg object-cover" />
+          <img src={logo} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
         ) : (
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 text-[11px] font-bold text-white">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 text-[11px] font-bold text-white">
             {schoolName.slice(0, 2).toUpperCase()}
           </div>
         )}
@@ -104,11 +105,16 @@ export default function MobileMenu() {
           <p className="truncate text-sm font-bold">{schoolName}</p>
         </div>
 
-        {/* Badge licence mini sur mobile */}
+        {/* 🆕 Bouton Recherche sur mobile */}
+        <div className="shrink-0">
+          <GlobalSearch />
+        </div>
+
+        {/* Badge mini licence sur mobile */}
         {licenseInfo && (
           <Link
             href="/abonnement"
-            className={`rounded-full px-2 py-1 text-[10px] font-bold ${
+            className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${
               licenseInfo.isExpired
                 ? 'bg-red-100 text-red-700'
                 : licenseInfo.daysLeft <= 7
@@ -121,10 +127,12 @@ export default function MobileMenu() {
         )}
       </header>
 
+      {/* Overlay sombre */}
       {open && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 lg:hidden" onClick={() => setOpen(false)} />
       )}
 
+      {/* Tiroir */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 lg:hidden ${
           open ? 'translate-x-0' : '-translate-x-full'
@@ -132,7 +140,6 @@ export default function MobileMenu() {
       >
         <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
           {logo ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={logo} alt="" className="h-10 w-10 rounded-xl object-cover shadow-md" />
           ) : (
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-sm font-bold text-white shadow-md">

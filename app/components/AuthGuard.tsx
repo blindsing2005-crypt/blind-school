@@ -12,7 +12,7 @@ import {
 } from '../lib/auth';
 import { useLicense } from '../lib/license';
 
-const PUBLIC_ROUTES = ['/login', '/licence'];
+const PUBLIC_ROUTES = ['/login', '/licence', '/super-admin'];
 const USERS_KEY = 'blind-school-users';
 const RECOVERY_KEY = 'blind-school-recovery-code';
 

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
   TRIAL_DAYS,
   computeStatus,
@@ -206,7 +207,7 @@ export default function AbonnementPage() {
           </button>
 
           <p className="mt-3 text-center text-[11px] text-indigo-700">
-            Essai gratuit de {TRIAL_DAYS} jours à l&apos;installation
+            Essai gratuit de {TRIAL_DAYS} jours à l'installation
           </p>
         </section>
       </div>
@@ -226,6 +227,17 @@ export default function AbonnementPage() {
           </a>
         </div>
       </section>
+
+      {/* Lien discret Super-Admin (Pour vous uniquement) */}
+      <div className="mt-8 text-center">
+        <Link
+          href="/super-admin"
+          className="text-[10px] text-slate-300 hover:text-slate-500 transition"
+          title="Espace Super-Admin"
+        >
+          ⚙️
+        </Link>
+      </div>
 
     </div>
   );
