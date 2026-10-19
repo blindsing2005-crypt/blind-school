@@ -5,6 +5,7 @@ import {
   checkRecoveryCode,
   hashPassword,
   requestReset,
+  ROLE_PERMISSIONS,
   useRecoveryCode,
   useSession,
   useUsers,
@@ -19,28 +20,24 @@ export default function LoginPage() {
   const [recoveryCode] = useRecoveryCode();
   const [, setSession] = useSession();
 
-  // Connexion
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Modal récupération
   const [showRecovery, setShowRecovery] = useState(false);
   const [recoveryTab, setRecoveryTab] = useState<'code' | 'email'>('email');
 
-  // Sous-onglet "Code de secours global"
   const [globalCode, setGlobalCode] = useState('');
   const [globalPwd, setGlobalPwd] = useState('');
   const [globalPwd2, setGlobalPwd2] = useState('');
   const [globalError, setGlobalError] = useState('');
   const [globalStep, setGlobalStep] = useState<'code' | 'pwd'>('code');
 
-  // Sous-onglet "Email / identifiant"
   const [identifier, setIdentifier] = useState('');
   const [emailStep, setEmailStep] = useState<'request' | 'verify' | 'newpwd' | 'done'>('request');
   const [foundUser, setFoundUser] = useState<UserAccount | null>(null);
-  const [sentCode, setSentCode] = useState('');   // ⚠️ Affiché à l'écran (pas d'email réel sans backend)
+  const [sentCode, setSentCode] = useState('');
   const [enteredCode, setEnteredCode] = useState('');
   const [emailPwd, setEmailPwd] = useState('');
   const [emailPwd2, setEmailPwd2] = useState('');
@@ -69,14 +66,25 @@ export default function LoginPage() {
         role: user.role,
         loginAt: new Date().toISOString(),
       });
-      router.replace('/');
+
+      // 🆕 Redirection intelligente selon les permissions
+      const perms = ROLE_PERMISSIONS[user.role];
+      let target = '/';
+      if (!perms.includes('dashboard.view')) {
+        if (perms.includes('eleves.view')) target = '/eleves';
+        else if (perms.includes('paiements.view')) target = '/paiements';
+        else if (perms.includes('bulletins.view')) target = '/bulletins';
+        else if (perms.includes('personnel.view')) target = '/personnel';
+        else if (perms.includes('vie.view')) target = '/vie-scolaire';
+        else if (perms.includes('parametres.view')) target = '/parametres';
+      }
+      router.replace(target);
     } catch {
       setError('Erreur inattendue. Réessayez.');
       setBusy(false);
     }
   };
 
-  /* ---------- Modal 1 : code de secours global ---------- */
   const handleGlobalVerify = () => {
     setGlobalError('');
     if (!checkRecoveryCode(recoveryCode, globalCode)) {
@@ -98,14 +106,10 @@ export default function LoginPage() {
     closeRecovery();
   };
 
-  /* ---------- Modal 2 : email / identifiant ---------- */
   const handleEmailRequest = () => {
     setEmailError('');
     const result = requestReset(users, identifier);
     if ('error' in result) { setEmailError(result.error); return; }
-
-    // ⚠️ En production, le code serait envoyé par email.
-    // Ici, on l'affiche à l'écran et on l'enregistre sur le compte.
     const { user, code } = result;
     setUsers((list) =>
       list.map((u) =>
@@ -216,7 +220,6 @@ export default function LoginPage() {
               <p className="text-xs text-slate-500">Deux méthodes disponibles</p>
             </div>
 
-            {/* Onglets */}
             <div className="flex border-b border-slate-200">
               <button
                 onClick={() => setRecoveryTab('email')}
@@ -236,7 +239,6 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {/* ====== Onglet EMAIL ====== */}
             {recoveryTab === 'email' && (
               <div className="space-y-4 p-5">
                 {emailStep === 'request' && (
@@ -280,9 +282,6 @@ export default function LoginPage() {
                       </p>
                       <p className="font-mono text-3xl font-bold tracking-[0.3em] text-indigo-900">
                         {sentCode}
-                      </p>
-                      <p className="mt-1 text-[10px] italic text-indigo-500">
-                        (Normalement envoyé par email — visible ici car pas de serveur)
                       </p>
                     </div>
                     <label className="block">
@@ -365,7 +364,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* ====== Onglet CODE DE SECOURS ====== */}
             {recoveryTab === 'code' && (
               <div className="space-y-4 p-5">
                 {globalStep === 'code' && (

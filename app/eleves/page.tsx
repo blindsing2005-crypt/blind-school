@@ -229,7 +229,7 @@ export default function ElevesPage() {
 
       {!activeYear && (
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ⚠️ <b>Aucune année scolaire active.</b> Le bouton d&apos;inscription est désactivé tant qu&apos;aucune année n&apos;est active. Allez dans <b>Configuration → 📅 Année scolaire</b>.
+          ⚠️ <b>Aucune année scolaire active.</b> Les élèves seront enregistrés sans année. Allez dans <b>Configuration → 📅 Année scolaire</b>.
         </div>
       )}
 
@@ -415,7 +415,7 @@ export default function ElevesPage() {
                 <input className={inputCls} value={form.lieuNaissance} onChange={(e) => updateForm({ lieuNaissance: e.target.value })} placeholder="Ex : Kinshasa" />
               </Field>
               <Field label="École de provenance">
-                <input className={inputCls} value={form.ecoleProvenance} onChange={(e) => updateForm({ ecoleProvenance: e.target.value })} placeholder="Ex : C.S La gloire de Dieu" />
+                <input className={inputCls} value={form.ecoleProvenance} onChange={(e) => updateForm({ ecoleProvenance: e.target.value })} placeholder="Ex : c.S La Grâce" />
               </Field>
             </div>
           </div>
@@ -435,7 +435,7 @@ export default function ElevesPage() {
                 <input className={inputCls} value={form.telephoneParent} onChange={(e) => updateForm({ telephoneParent: e.target.value })} placeholder="+243 8XX XXX XXX" />
               </Field>
               <Field label="Adresse">
-                <input className={inputCls} value={form.adresse} onChange={(e) => updateForm({ adresse: e.target.value })} placeholder="Av. in mazaz, Q. Malela" />
+                <input className={inputCls} value={form.adresse} onChange={(e) => updateForm({ adresse: e.target.value })} placeholder="Av. In mazaz, Q. Malela" />
               </Field>
             </div>
           </div>
@@ -483,8 +483,7 @@ export default function ElevesPage() {
             </button>
             <button
               type="submit"
-              disabled={!activeYear}
-              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
             >
               Enregistrer l&apos;inscription
             </button>

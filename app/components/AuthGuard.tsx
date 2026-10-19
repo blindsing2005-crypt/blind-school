@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   generateRecoveryCode,
   hashPassword,
+  ROLE_PERMISSIONS,
   useRecoveryCode,
   useSession,
   useUsers,
@@ -24,9 +25,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { status } = useLicense();
   const [ready, setReady] = useState(false);
 
-  /* ============================================================
-     INITIALISATION
-     ============================================================ */
   useEffect(() => {
     let cancelled = false;
 
@@ -102,39 +100,41 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ============================================================
-     REDIRECTIONS
-     ============================================================ */
   useEffect(() => {
     if (!ready || !status) return;
 
     const isPublic = PUBLIC_ROUTES.includes(path);
 
-    // Licence expirée → forcer /licence
     if (status.isExpired && path !== '/licence') {
       router.replace('/licence');
       return;
     }
 
-    // Licence valide mais sur /licence → retour accueil
     if (!status.isExpired && path === '/licence') {
       router.replace('/');
       return;
     }
 
-    // Auth
     if (!status.isExpired) {
       if (!session && !isPublic) {
         router.replace('/login');
       } else if (session && path === '/login') {
         router.replace('/');
+      } else if (session && path === '/') {
+        // 🆕 Redirection si pas accès au Dashboard
+        const perms = ROLE_PERMISSIONS[session.role];
+        if (!perms.includes('dashboard.view')) {
+          if (perms.includes('eleves.view')) router.replace('/eleves');
+          else if (perms.includes('paiements.view')) router.replace('/paiements');
+          else if (perms.includes('bulletins.view')) router.replace('/bulletins');
+          else if (perms.includes('personnel.view')) router.replace('/personnel');
+          else if (perms.includes('vie.view')) router.replace('/vie-scolaire');
+          else if (perms.includes('parametres.view')) router.replace('/parametres');
+        }
       }
     }
   }, [ready, status, session, path, router]);
 
-  /* ============================================================
-     AFFICHAGE
-     ============================================================ */
   if (!ready || !status) {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-50">
