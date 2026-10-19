@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 
 /* ============================================================
-   BLIND SCHOOL — Données partagées
+   BLIND SCHOOL — Cœur des données (Store)
    ============================================================ */
 
 export const STUDENT_STATUSES = ['Actif', 'Redoublant', 'Abandonné', 'Expulsé', 'Diplômé'] as const;
@@ -58,8 +58,8 @@ export interface TrancheSetting {
   label: string;
   amountMaternelle: number;
   amountPrimaire: number;
-  amountSecondaire: number;
-  amountOptions?: Record<string, number>; // 🆕 Tarifs par option
+  amountSecondaire: number; // Prix de base si pas d'option
+  amountOptions: Record<string, number>; // Prix spécifiques par option
   startDate: string;
   endDate: string;
 }
@@ -79,15 +79,14 @@ export interface SchoolSettings {
   schoolLogo: string;
   allowOffPeriodPayment: boolean;
   tranches: TrancheSetting[];
-  classes: Record<string, string[]>; // 🆕 Classes dynamiques
-  options: string[];                 // 🆕 Options dynamiques
+  classes: Record<string, string[]>; // Classes dynamiques
+  options: string[];                 // Options dynamiques
 }
 
 export const STORAGE_KEYS = {
   students: 'blind-school-students',
   payments: 'blind-school-payments',
   settings: 'blind-school-settings',
-  tuition: 'blind-school-tuition',
   schoolYears: 'blind-school-years',
   activeYearId: 'blind-school-active-year',
 } as const;
@@ -95,7 +94,6 @@ export const STORAGE_KEYS = {
 export const NIVEAUX = ['Maternelle', 'Primaire', 'Secondaire'] as const;
 export type Niveau = (typeof NIVEAUX)[number];
 
-// Valeurs par défaut si l'utilisateur n'a rien configuré
 export const DEFAULT_CLASSES: Record<Niveau, string[]> = {
   Maternelle: ['1ère Maternelle', '2ème Maternelle', '3ème Maternelle'],
   Primaire: ['1ère Primaire', '2ème Primaire', '3ème Primaire', '4ème Primaire', '5ème Primaire', '6ème Primaire'],
@@ -108,13 +106,13 @@ export const DEFAULT_OPTIONS = [
   'Informatique', 'Électronique'
 ];
 
+// Classes qui exigent obligatoirement une option (1ère à 4ème secondaire)
 export const CLASSES_AVEC_OPTION = new Set([
   '1ère A', '1ère B', '2ème A', '2ème B', '3ème A', '3ème B', '4ème A', '4ème B',
 ]);
 
 export const classeAvecOption = (classe: string) => CLASSES_AVEC_OPTION.has(classe);
 
-export const TRANCHE_OPTIONS = ['1ère tranche', '2ème tranche', '3ème tranche', 'Solde final', 'Autre'] as const;
 export const PAYMENT_METHODS = ['Espèces', 'Mobile Money', 'Virement', 'Chèque'] as const;
 
 const ANNEE = new Date().getFullYear();
@@ -138,11 +136,8 @@ export const DEFAULT_SCHOOL_SETTINGS: SchoolSettings = {
   options: [...DEFAULT_OPTIONS],
 };
 
-/* ---------- Hook localStorage partagé ---------- */
-function usePersistentState<T>(
-  key: string,
-  initial: T,
-): [T, (v: T | ((p: T) => T)) => void] {
+/* ---------- Hook de base (LocalStorage) ---------- */
+function usePersistentState<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
   const [value, setValue] = useState<T>(initial);
 
   useEffect(() => {
@@ -150,14 +145,7 @@ function usePersistentState<T>(
       const raw = localStorage.getItem(key);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          !Array.isArray(parsed) &&
-          initial &&
-          typeof initial === 'object' &&
-          !Array.isArray(initial)
-        ) {
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && initial && typeof initial === 'object' && !Array.isArray(initial)) {
           setValue({ ...(initial as object), ...parsed } as T);
         } else {
           setValue(parsed);
@@ -180,9 +168,7 @@ function usePersistentState<T>(
       const next = typeof v === 'function' ? (v as (p: T) => T)(prev) : v;
       try {
         localStorage.setItem(key, JSON.stringify(next));
-        window.dispatchEvent(
-          new CustomEvent('bs-store', { detail: { key, value: next } }),
-        );
+        window.dispatchEvent(new CustomEvent('bs-store', { detail: { key, value: next } }));
       } catch { /* ignore */ }
       return next;
     });
@@ -191,63 +177,31 @@ function usePersistentState<T>(
   return [value, set];
 }
 
-/* ---------- Étudiants ---------- */
-export const useStudents = () => {
-  const [students, setStudents] = usePersistentState<Student[]>(STORAGE_KEYS.students, []);
-  return [students, setStudents] as const;
-};
+/* ---------- Hooks exposés ---------- */
+export const useStudents = () => usePersistentState<Student[]>(STORAGE_KEYS.students, []);
+export const usePayments = () => usePersistentState<Payment[]>(STORAGE_KEYS.payments, []);
 
-/* ---------- Paiements ---------- */
-export const usePayments = () => {
-  const [payments, setPayments] = usePersistentState<Payment[]>(STORAGE_KEYS.payments, []);
-  return [payments, setPayments] as const;
-};
-
-/* ---------- École ---------- */
 export const useSchoolSettings = () => {
-  const [settings, setSettings] = usePersistentState<SchoolSettings>(
-    STORAGE_KEYS.settings,
-    DEFAULT_SCHOOL_SETTINGS,
-  );
-
-  // Migrations
+  const [settings, setSettings] = usePersistentState<SchoolSettings>(STORAGE_KEYS.settings, DEFAULT_SCHOOL_SETTINGS);
+  
+  // Migration de sécurité au cas où d'anciennes données existent
   useEffect(() => {
-    let needsMigration = false;
-    const newSettings = { ...settings };
-
-    if (!settings.classes) {
-      newSettings.classes = DEFAULT_CLASSES;
-      needsMigration = true;
+    let needsUpdate = false;
+    const newS = { ...settings };
+    if (!settings.classes) { newS.classes = DEFAULT_CLASSES; needsUpdate = true; }
+    if (!settings.options) { newS.options = [...DEFAULT_OPTIONS]; needsUpdate = true; }
+    if (settings.tranches?.some(t => t.amountOptions === undefined)) {
+      newS.tranches = settings.tranches.map(t => ({ ...t, amountOptions: {} }));
+      needsUpdate = true;
     }
-    if (!settings.options) {
-      newSettings.options = [...DEFAULT_OPTIONS];
-      needsMigration = true;
-    }
-    if (settings.tranches) {
-      const tranchesMigrated = settings.tranches.map(t => {
-        if (t.amountOptions === undefined) {
-          needsMigration = true;
-          return { ...t, amountOptions: {} };
-        }
-        return t;
-      });
-      newSettings.tranches = tranchesMigrated;
-    }
-
-    if (needsMigration) {
-      setSettings(newSettings);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (needsUpdate) setSettings(newS);
   }, []);
 
   return [settings, setSettings] as const;
 };
 
-/* ---------- Années scolaires ---------- */
-export const useSchoolYears = () =>
-  usePersistentState<SchoolYear[]>(STORAGE_KEYS.schoolYears, []);
-export const useActiveYearId = () =>
-  usePersistentState<string>(STORAGE_KEYS.activeYearId, '');
+export const useSchoolYears = () => usePersistentState<SchoolYear[]>(STORAGE_KEYS.schoolYears, []);
+export const useActiveYearId = () => usePersistentState<string>(STORAGE_KEYS.activeYearId, '');
 
 export const useActiveYear = (): SchoolYear | null => {
   const [years] = useSchoolYears();
@@ -255,16 +209,11 @@ export const useActiveYear = (): SchoolYear | null => {
   return years.find((y) => y.id === activeId) || null;
 };
 
-/* ---------- Helpers ---------- */
+/* ---------- Fonctions de calcul (Helpers) ---------- */
 export const formatMoney = (n: number) =>
   new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n) + ' FC';
 
-export type PaymentStatus = {
-  label: 'Payé' | 'Partiel' | 'Non payé' | 'N/A';
-  color: 'emerald' | 'amber' | 'red' | 'slate';
-};
-
-export function getPaymentStatus(totalPaid: number, totalDue: number): PaymentStatus {
+export function getPaymentStatus(totalPaid: number, totalDue: number) {
   if (totalDue <= 0) return { label: 'N/A', color: 'slate' };
   if (totalPaid >= totalDue) return { label: 'Payé', color: 'emerald' };
   if (totalPaid === 0) return { label: 'Non payé', color: 'red' };
@@ -276,42 +225,29 @@ export function nextReceiptNumber(payments: Payment[]): string {
   return `REC-${year}-${String(payments.length + 1).padStart(5, '0')}`;
 }
 
+// 🆕 Calcule le prix exact d'une tranche selon le niveau et l'option
 export function trancheAmountFor(t: TrancheSetting, niveau: string, option?: string): number {
   if (niveau === 'Maternelle') return t.amountMaternelle || 0;
   if (niveau === 'Primaire') return t.amountPrimaire || 0;
   if (niveau === 'Secondaire') {
+    // Si une option est choisie et qu'un prix spécifique existe pour cette option
     if (option && t.amountOptions && t.amountOptions[option] !== undefined) {
       return t.amountOptions[option];
     }
+    // Sinon, on prend le prix de base du secondaire
     return t.amountSecondaire || 0;
   }
   return 0;
 }
 
+// 🆕 Calcule le total dû pour un élève
 export function totalDue(tranches: TrancheSetting[], niveau?: string, option?: string): number {
-  if (niveau) {
-    return tranches.reduce((s, t) => s + trancheAmountFor(t, niveau, option), 0);
-  }
-  return tranches.reduce((s, t) => s + (t.amountPrimaire || 0), 0);
+  if (!niveau) return 0;
+  return tranches.reduce((s, t) => s + trancheAmountFor(t, niveau, option), 0);
 }
 
-export function getActiveTranche(
-  tranches: TrancheSetting[],
-  today: string = new Date().toISOString().slice(0, 10),
-): TrancheSetting | null {
-  return tranches.find(
-    (t) => t.startDate && t.endDate && today >= t.startDate && today <= t.endDate,
-  ) || null;
-}
-
-export function getTranchePaid(
-  payments: Payment[],
-  studentId: string,
-  trancheLabel: string,
-): number {
-  return payments
-    .filter((p) => p.studentId === studentId && p.tranche === trancheLabel)
-    .reduce((s, p) => s + p.amount, 0);
+export function getActiveTranche(tranches: TrancheSetting[], today: string = new Date().toISOString().slice(0, 10)): TrancheSetting | null {
+  return tranches.find((t) => t.startDate && t.endDate && today >= t.startDate && today <= t.endDate) || null;
 }
 
 export function getStudentTotalPaid(payments: Payment[], studentId: string): number {
@@ -323,8 +259,15 @@ export function nextClass(currentClasse: string, allClasses: Record<string, stri
   ['Maternelle', 'Primaire', 'Secondaire'].forEach(niv => {
     if (allClasses[niv]) order.push(...allClasses[niv]);
   });
-  
   const i = order.indexOf(currentClasse);
   if (i === -1 || i === order.length - 1) return null;
   return order[i + 1];
+}
+/* ============================================================
+   COMPATIBILITÉ AVEC LES ANCIENS MODULES
+   ============================================================ */
+export const CLASSES = DEFAULT_CLASSES;
+
+export function getTranchePaid(payments: Payment[], studentId: string, trancheLabel: string): number {
+  return payments.filter(p => p.studentId === studentId && p.tranche === trancheLabel).reduce((s, p) => s + p.amount, 0);
 }

@@ -6,7 +6,6 @@ import {
   useActiveYearId,
   useActiveYear,
   DEFAULT_CLASSES,
-  DEFAULT_OPTIONS,
   formatMoney,
   type TrancheSetting,
   type SchoolYear,
@@ -39,14 +38,14 @@ export default function ParametresPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Configuration</h1>
         <p className="text-sm text-slate-500">
-          Année scolaire, école, classes, sauvegarde et gestion des données
+          Année scolaire, école, classes, options et sauvegarde
         </p>
       </header>
 
       <div className="mb-5 flex flex-wrap gap-2">
         <TabBtn active={tab === 'annee'} onClick={() => setTab('annee')}>📅 Année</TabBtn>
         <TabBtn active={tab === 'ecole'} onClick={() => setTab('ecole')}>🏫 École &amp; Minerval</TabBtn>
-        <TabBtn active={tab === 'classes'} onClick={() => setTab('classes')}>🏫 Classes &amp; Options</TabBtn>
+        <TabBtn active={tab === 'classes'} onClick={() => setTab('classes')}>🎓 Classes &amp; Options</TabBtn>
         <TabBtn active={tab === 'sauvegarde'} onClick={() => setTab('sauvegarde')}>💾 Sauvegarde</TabBtn>
         <TabBtn active={tab === 'reinit'} onClick={() => setTab('reinit')}>⚠️ Réinitialisation</TabBtn>
       </div>
@@ -150,7 +149,7 @@ function AnneeTab() {
         <h2 className="mb-1 text-lg font-semibold">➕ Nouvelle année scolaire</h2>
         {msg && <div className={`mb-4 rounded-xl border px-4 py-3 text-sm font-medium ${msg.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`}>{msg.text}</div>}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 mt-4">
-          <Field label="Libellé *"><input className={inputCls} value={newYear.label} onChange={(e) => setNewYear({ ...newYear, label: e.target.value })} /></Field>
+          <Field label="Libellé *"><input className={inputCls} value={newYear.label} onChange={(e) => setNewYear({ ...newYear, label: e.target.value })} placeholder="Ex: 2026 - 2027" /></Field>
           <Field label="Date de début *"><input type="date" className={inputCls} value={newYear.startDate} onChange={(e) => setNewYear({ ...newYear, startDate: e.target.value })} /></Field>
           <Field label="Date de fin *"><input type="date" className={inputCls} value={newYear.endDate} onChange={(e) => setNewYear({ ...newYear, endDate: e.target.value })} /></Field>
         </div>
@@ -188,7 +187,7 @@ function AnneeTab() {
 }
 
 /* ============================================================
-   ONGLET 2 — ÉCOLE & MINERVAL (avec tarifs par option)
+   ONGLET 2 — ÉCOLE & MINERVAL (avec prix par option)
    ============================================================ */
 function EcoleTab() {
   const [settings, setSettings] = useSchoolSettings();
@@ -220,10 +219,6 @@ function EcoleTab() {
     r.readAsDataURL(file);
   };
 
-  const totalMat = tranches.reduce((s, t) => s + (t.amountMaternelle || 0), 0);
-  const totalPri = tranches.reduce((s, t) => s + (t.amountPrimaire || 0), 0);
-  const totalSecBase = tranches.reduce((s, t) => s + (t.amountSecondaire || 0), 0);
-
   return (
     <div className="space-y-6">
       {msg && <div className={`rounded-xl border px-4 py-3 text-sm ${msg.type === 'success' ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>{msg.text}</div>}
@@ -249,8 +244,8 @@ function EcoleTab() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="mb-1 text-lg font-semibold">💰 Tranches &amp; minerval</h2>
-        <p className="mb-5 text-sm text-slate-500">Saisissez les montants. Pour le secondaire, ajoutez le prix spécifique de chaque option.</p>
+        <h2 className="mb-1 text-lg font-semibold">💰 Tranches &amp; Minerval (Prix par défaut)</h2>
+        <p className="mb-5 text-sm text-slate-500">Saisissez les montants de base. Pour les options du secondaire, remplissez le tableau ci-dessous.</p>
 
         <div className="-mx-2 overflow-x-auto">
           <table className="w-full text-sm">
@@ -316,12 +311,6 @@ function EcoleTab() {
           </table>
         </div>
         <p className="mt-2 text-xs text-slate-500">Si un champ est vide, le prix de base du Secondaire sera utilisé.</p>
-
-        <div className="mt-6 flex flex-wrap gap-4 rounded-lg bg-slate-50 p-4 text-xs font-semibold">
-          <span>Total Maternelle : {formatMoney(totalMat)}</span>
-          <span>Total Primaire : {formatMoney(totalPri)}</span>
-          <span>Total Secondaire (Base) : {formatMoney(totalSecBase)}</span>
-        </div>
       </section>
     </div>
   );

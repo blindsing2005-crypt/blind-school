@@ -27,6 +27,7 @@ export default function Sidebar() {
   const activeYear = useActiveYear();
   const { session, can, logout } = useAuth();
   const { license } = useLicense();
+  
   const schoolName = settings.schoolName || 'BLIND SCHOOL';
   const logo = settings.schoolLogo;
 
@@ -66,9 +67,9 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
+      {/* En-tête Logo + École */}
       <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-5">
         {logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={logo} alt="Logo" className="h-10 w-10 rounded-xl object-cover shadow-md" />
         ) : (
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-sm font-bold text-white shadow-md">
@@ -81,6 +82,7 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Année active */}
       {activeYear && (
         <div className="border-b border-slate-200 bg-emerald-50 px-4 py-2.5">
           <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-700">
@@ -90,6 +92,7 @@ export default function Sidebar() {
         </div>
       )}
 
+      {/* Utilisateur connecté */}
       {session && (
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-xs text-slate-500">Connecté(e) en tant que</p>
@@ -100,6 +103,7 @@ export default function Sidebar() {
         </div>
       )}
 
+      {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {visibleNav.map((item) => {
           const active = path === item.href;
@@ -120,6 +124,7 @@ export default function Sidebar() {
         })}
       </nav>
 
+      {/* Badge Licence */}
       {licenseInfo && (
         <div className="border-t border-slate-200 p-3">
           <Link
@@ -153,6 +158,7 @@ export default function Sidebar() {
         </div>
       )}
 
+      {/* Pied de page */}
       <div className="space-y-2 border-t border-slate-200 p-4">
         <p className="text-xs text-slate-500">Année {anneeScolaire || '...'}</p>
         <button

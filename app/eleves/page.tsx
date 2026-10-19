@@ -1,9 +1,8 @@
 'use client';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  CLASSES,
+  DEFAULT_CLASSES,
   NIVEAUX,
-  OPTIONS,
   STUDENT_STATUSES,
   STUDENT_STATUS_COLORS,
   classeAvecOption,
@@ -11,12 +10,12 @@ import {
   getPaymentStatus,
   getStudentTotalPaid,
   nextClass,
+  totalDue,
   useActiveYear,
   usePayments,
   useSchoolSettings,
   useSchoolYears,
   useStudents,
-  useTuition,
   type Niveau,
   type Payment,
   type Student,
@@ -51,7 +50,6 @@ const inputCls =
 export default function ElevesPage() {
   const [students, setStudents] = useStudents();
   const [payments] = usePayments();
-  const [tuition] = useTuition();
   const [settings] = useSchoolSettings();
   const activeYear = useActiveYear();
 
@@ -59,16 +57,21 @@ export default function ElevesPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Filtres
   const [fNiveau, setFNiveau] = useState<Niveau | ''>('');
   const [fClasse, setFClasse] = useState('');
   const [fOption, setFOption] = useState('');
   const [fStatut, setFStatut] = useState<StudentStatus | ''>('');
   const [search, setSearch] = useState('');
 
+  // Modales
   const [statusEdit, setStatusEdit] = useState<Student | null>(null);
   const [detailStudent, setDetailStudent] = useState<Student | null>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [reinscriptionTarget, setReinscriptionTarget] = useState<Student | null>(null);
+
+  // Classes dynamiques
+  const currentClasses = settings.classes || DEFAULT_CLASSES;
 
   useEffect(() => {
     if (!message) return;
@@ -80,7 +83,7 @@ export default function ElevesPage() {
 
   const activeStudents = useMemo(() => {
     return students.filter((s) => {
-      if (!activeYearId) return true;
+      if (!activeYearId) return true; // Si pas d'année, on montre tout par défaut
       return s.anneeScolaireId === activeYearId || s.anneeScolaireId === '';
     });
   }, [students, activeYearId]);
@@ -96,13 +99,12 @@ export default function ElevesPage() {
       .filter((s, i, arr) => arr.findIndex((x) => x.matricule === s.matricule) === i);
   }, [students, activeStudents, activeYearId]);
 
-  const classesDisponibles = form.niveau ? CLASSES[form.niveau] : [];
+  const classesDisponibles = form.niveau ? currentClasses[form.niveau] : [];
   const besoinOption = form.classe ? classeAvecOption(form.classe) : false;
 
   const updateForm = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
   const handleNiveauChange = (niveau: Niveau | '') => updateForm({ niveau, classe: '', option: '' });
-  const handleClasseChange = (classe: string) =>
-    updateForm({ classe, option: classeAvecOption(classe) ? form.option : '' });
+  const handleClasseChange = (classe: string) => updateForm({ classe, option: classeAvecOption(classe) ? form.option : '' });
 
   const genererMatricule = () => {
     const year = new Date().getFullYear();
@@ -140,12 +142,9 @@ export default function ElevesPage() {
     setTab('liste');
   };
 
-  const classesFiltre = fNiveau ? CLASSES[fNiveau] : Object.values(CLASSES).flat();
+  const classesFiltre = fNiveau ? currentClasses[fNiveau] : Object.values(currentClasses).flat();
   const optionFiltreDispo = fClasse ? classeAvecOption(fClasse) : false;
-
-  const resetFiltres = () => {
-    setFNiveau(''); setFClasse(''); setFOption(''); setFStatut(''); setSearch('');
-  };
+  const resetFiltres = () => { setFNiveau(''); setFClasse(''); setFOption(''); setFStatut(''); setSearch(''); };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -163,9 +162,7 @@ export default function ElevesPage() {
   }, [activeStudents, fNiveau, fClasse, fOption, fStatut, search]);
 
   const stats = useMemo(() => {
-    const byStatut: Record<StudentStatus, number> = {
-      Actif: 0, Redoublant: 0, Abandonné: 0, Expulsé: 0, Diplômé: 0,
-    };
+    const byStatut: Record<StudentStatus, number> = { Actif: 0, Redoublant: 0, Abandonné: 0, Expulsé: 0, Diplômé: 0 };
     activeStudents.forEach((s) => {
       const st = s.statut || 'Actif';
       byStatut[st] = (byStatut[st] || 0) + 1;
@@ -174,7 +171,7 @@ export default function ElevesPage() {
   }, [activeStudents]);
 
   const supprimer = (id: string) => {
-    if (!confirm('Supprimer définitivement cet élève ?')) return;
+    if (!confirm('Supprimer définitivement cet élève ? (Préférez le statut « Abandonné » pour garder l\'historique)')) return;
     setStudents((s) => s.filter((x) => x.id !== id));
   };
 
@@ -184,55 +181,53 @@ export default function ElevesPage() {
     setMessage({ type: 'success', text: `Statut mis à jour : ${statut}` });
   };
 
-  const printColumns = useMemo(() => [
+  // --- PRÉPARATION DE L'IMPRESSION ---
+  const printColumns = [
     { key: 'num', label: 'N°', width: '6%', align: 'center' as const },
     { key: 'matricule', label: 'Matricule', width: '14%' },
     { key: 'nom', label: 'Nom complet', width: '34%' },
     { key: 'sexe', label: 'Sexe', width: '8%', align: 'center' as const },
     { key: 'classe', label: 'Classe', width: '18%' },
     { key: 'statut', label: 'Statut', width: '20%' },
-  ], []);
+  ];
 
-  const printRows = useMemo(() => {
-    return [...filtered]
-      .sort((a, b) => `${a.nom}${a.prenom}`.localeCompare(`${b.nom}${b.prenom}`))
-      .map((s, i) => ({
-        num: i + 1,
-        matricule: s.matricule,
-        nom: `${s.nom} ${s.postnom} ${s.prenom}`,
-        sexe: s.sexe,
-        classe: s.classe + (s.option ? ` • ${s.option}` : ''),
-        statut: s.statut || 'Actif',
-      }));
-  }, [filtered]);
+  const printRows = [...filtered]
+    .sort((a, b) => `${a.nom}${a.prenom}`.localeCompare(`${b.nom}${b.prenom}`))
+    .map((s, i) => ({
+      num: i + 1,
+      matricule: s.matricule,
+      nom: `${s.nom} ${s.postnom} ${s.prenom}`,
+      sexe: s.sexe,
+      classe: s.classe + (s.option ? ` • ${s.option}` : ''),
+      statut: s.statut || 'Actif',
+    }));
 
-  const printSubtitle = useMemo(() => {
-    const parts: string[] = [];
-    if (activeYear) parts.push(`Année : ${activeYear.label}`);
-    if (fNiveau) parts.push(`Niveau : ${fNiveau}`);
-    if (fClasse) parts.push(`Classe : ${fClasse}`);
-    if (fOption) parts.push(`Option : ${fOption}`);
-    if (fStatut) parts.push(`Statut : ${fStatut}`);
-    return parts.join(' • ') || 'Tous les élèves';
-  }, [activeYear, fNiveau, fClasse, fOption, fStatut]);
+  const printSubtitle = [
+    activeYear ? `Année : ${activeYear.label}` : '',
+    fNiveau ? `Niveau : ${fNiveau}` : '',
+    fClasse ? `Classe : ${fClasse}` : '',
+    fOption ? `Option : ${fOption}` : '',
+    fStatut ? `Statut : ${fStatut}` : ''
+  ].filter(Boolean).join(' • ') || 'Tous les élèves';
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      {/* En-tête */}
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Élèves &amp; Inscriptions</h1>
         <p className="text-sm text-slate-500">
-          {activeYear
-            ? `Année scolaire active : ${activeYear.label}`
-            : 'Aucune année active — configurez-la dans Configuration'}
+          {activeYear ? `Année scolaire active : ${activeYear.label}` : 'Aucune année active — configurez-la dans Configuration'}
         </p>
       </header>
 
+      {/* Bandeau d'alerte si pas d'année */}
       {!activeYear && (
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ⚠️ <b>Aucune année scolaire active.</b> Les élèves seront enregistrés sans année. Allez dans <b>Configuration → 📅 Année scolaire</b>.
+          ⚠️ <b>Aucune année scolaire active.</b> Le bouton d&apos;inscription est désactivé tant qu&apos;aucune année n&apos;est active. Allez dans <b>Configuration → 📅 Année scolaire</b>.
         </div>
       )}
 
+      {/* Cartes Statistiques */}
       <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Total" value={stats.total} accent="indigo" />
         <StatCard label="Actifs" value={stats.byStatut.Actif} accent="emerald" />
@@ -241,20 +236,19 @@ export default function ElevesPage() {
         <StatCard label="Diplômés" value={stats.byStatut.Diplômé} accent="purple" />
       </section>
 
+      {/* Message de succès/erreur */}
       {message && (
         <div className={`mb-5 rounded-xl border px-4 py-3 text-sm font-medium ${
-          message.type === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : 'border-red-200 bg-red-50 text-red-800'
+          message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'
         }`}>
           {message.text}
         </div>
       )}
 
+      {/* Onglets */}
       <div className="mb-5 flex flex-wrap gap-2">
         <TabBtn active={tab === 'liste'} onClick={() => setTab('liste')}>
-          📋 Liste des élèves
-          <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">{activeStudents.length}</span>
+          📋 Liste des élèves <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">{activeStudents.length}</span>
         </TabBtn>
         <TabBtn active={tab === 'inscription'} onClick={() => setTab('inscription')}>
           ➕ Nouvelle inscription
@@ -262,13 +256,12 @@ export default function ElevesPage() {
         <TabBtn active={tab === 'reinscription'} onClick={() => setTab('reinscription')}>
           🔄 Réinscription
           {pastStudentsToReinscrire.length > 0 && (
-            <span className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white">
-              {pastStudentsToReinscrire.length}
-            </span>
+            <span className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white">{pastStudentsToReinscrire.length}</span>
           )}
         </TabBtn>
       </div>
 
+      {/* ============ ONGLET LISTE ============ */}
       {tab === 'liste' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-5">
@@ -287,7 +280,7 @@ export default function ElevesPage() {
             <Field label="Option">
               <select className={inputCls} value={fOption} onChange={(e) => setFOption(e.target.value)} disabled={!optionFiltreDispo}>
                 <option value="">{optionFiltreDispo ? 'Toutes les options' : '— Non applicable —'}</option>
-                {OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                {settings.options.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </Field>
             <Field label="Statut">
@@ -302,20 +295,12 @@ export default function ElevesPage() {
           </div>
 
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">{filtered.length}</span> élève(s)
-            </p>
+            <p className="text-sm text-slate-600"><span className="font-semibold text-slate-900">{filtered.length}</span> élève(s)</p>
             <div className="flex gap-2">
               {(fNiveau || fClasse || fOption || fStatut || search) && (
-                <button onClick={resetFiltres} className="text-xs font-medium text-indigo-600 hover:underline">
-                  Réinitialiser les filtres
-                </button>
+                <button onClick={resetFiltres} className="text-xs font-medium text-indigo-600 hover:underline">Réinitialiser les filtres</button>
               )}
-              <button
-                onClick={() => setShowPrint(true)}
-                disabled={filtered.length === 0}
-                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300"
-              >
+              <button onClick={() => setShowPrint(true)} disabled={filtered.length === 0} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300">
                 🖨️ Imprimer la liste
               </button>
             </div>
@@ -354,27 +339,17 @@ export default function ElevesPage() {
                           <div className="text-xs text-slate-400">{s.telephoneParent || '—'}</div>
                         </td>
                         <td className="px-3 py-2">{s.sexe}</td>
-                        <td className="px-3 py-2">
-                          <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{s.niveau}</span>
-                        </td>
+                        <td className="px-3 py-2"><span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{s.niveau}</span></td>
                         <td className="px-3 py-2">{s.classe}</td>
                         <td className="px-3 py-2 text-slate-600">{s.option || '—'}</td>
                         <td className="px-3 py-2">
-                          <button
-                            onClick={() => setStatusEdit(s)}
-                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${STUDENT_STATUS_COLORS[statut]}`}
-                            title="Changer le statut"
-                          >
+                          <button onClick={() => setStatusEdit(s)} className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${STUDENT_STATUS_COLORS[statut]}`}>
                             {statut} ▾
                           </button>
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
-                          <button onClick={() => setDetailStudent(s)} className="mr-3 text-xs font-medium text-indigo-600 hover:underline">
-                            Fiche
-                          </button>
-                          <button onClick={() => supprimer(s.id)} className="text-xs font-medium text-red-500 hover:text-red-700">
-                            Supprimer
-                          </button>
+                          <button onClick={() => setDetailStudent(s)} className="mr-3 text-xs font-medium text-indigo-600 hover:underline">Fiche</button>
+                          <button onClick={() => supprimer(s.id)} className="text-xs font-medium text-red-500 hover:text-red-700">Supprimer</button>
                         </td>
                       </tr>
                     );
@@ -386,64 +361,38 @@ export default function ElevesPage() {
         </div>
       )}
 
+      {/* ============ ONGLET INSCRIPTION ============ */}
       {tab === 'inscription' && (
         <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Identité de l&apos;élève
-            </h2>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Identité de l&apos;élève</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Field label="Nom" required>
-                <input className={inputCls} value={form.nom} onChange={(e) => updateForm({ nom: e.target.value })} placeholder="Ex : NDOBOLA" />
-              </Field>
-              <Field label="Postnom">
-                <input className={inputCls} value={form.postnom} onChange={(e) => updateForm({ postnom: e.target.value })} placeholder="Ex : KABEYA" />
-              </Field>
-              <Field label="Prénom" required>
-                <input className={inputCls} value={form.prenom} onChange={(e) => updateForm({ prenom: e.target.value })} placeholder="Ex : Bel ange" />
-              </Field>
+              <Field label="Nom" required><input className={inputCls} value={form.nom} onChange={(e) => updateForm({ nom: e.target.value })} placeholder="Ex : NDOBOLA" /></Field>
+              <Field label="Postnom"><input className={inputCls} value={form.postnom} onChange={(e) => updateForm({ postnom: e.target.value })} placeholder="Ex : KABEYA" /></Field>
+              <Field label="Prénom" required><input className={inputCls} value={form.prenom} onChange={(e) => updateForm({ prenom: e.target.value })} placeholder="Ex : Bel ange" /></Field>
               <Field label="Sexe">
                 <select className={inputCls} value={form.sexe} onChange={(e) => updateForm({ sexe: e.target.value as 'M' | 'F' })}>
-                  <option value="M">Masculin</option>
-                  <option value="F">Féminin</option>
+                  <option value="M">Masculin</option><option value="F">Féminin</option>
                 </select>
               </Field>
-              <Field label="Date de naissance">
-                <input type="date" className={inputCls} value={form.dateNaissance} onChange={(e) => updateForm({ dateNaissance: e.target.value })} />
-              </Field>
-              <Field label="Lieu de naissance">
-                <input className={inputCls} value={form.lieuNaissance} onChange={(e) => updateForm({ lieuNaissance: e.target.value })} placeholder="Ex : Kinshasa" />
-              </Field>
-              <Field label="École de provenance">
-                <input className={inputCls} value={form.ecoleProvenance} onChange={(e) => updateForm({ ecoleProvenance: e.target.value })} placeholder="Ex : c.S La Grâce" />
-              </Field>
+              <Field label="Date de naissance"><input type="date" className={inputCls} value={form.dateNaissance} onChange={(e) => updateForm({ dateNaissance: e.target.value })} /></Field>
+              <Field label="Lieu de naissance"><input className={inputCls} value={form.lieuNaissance} onChange={(e) => updateForm({ lieuNaissance: e.target.value })} placeholder="Ex : Kinshasa" /></Field>
+              <Field label="École de provenance"><input className={inputCls} value={form.ecoleProvenance} onChange={(e) => updateForm({ ecoleProvenance: e.target.value })} placeholder="Ex : C.S LA GLOIRE DE DIEU" /></Field>
             </div>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Parent / Tuteur
-            </h2>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Parent / Tuteur</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Field label="Nom complet du parent">
-                <input className={inputCls} value={form.nomParent} onChange={(e) => updateForm({ nomParent: e.target.value })} placeholder="Ex : AMISI FATAKI" />
-              </Field>
-              <Field label="Profession du responsable">
-                <input className={inputCls} value={form.professionResponsable} onChange={(e) => updateForm({ professionResponsable: e.target.value })} placeholder="Ex : Enseignant, Commerçant…" />
-              </Field>
-              <Field label="Téléphone">
-                <input className={inputCls} value={form.telephoneParent} onChange={(e) => updateForm({ telephoneParent: e.target.value })} placeholder="+243 8XX XXX XXX" />
-              </Field>
-              <Field label="Adresse">
-                <input className={inputCls} value={form.adresse} onChange={(e) => updateForm({ adresse: e.target.value })} placeholder="Av. In mazaz, Q. Malela" />
-              </Field>
+              <Field label="Nom complet du parent"><input className={inputCls} value={form.nomParent} onChange={(e) => updateForm({ nomParent: e.target.value })} placeholder="Ex : AMISI FATAKI" /></Field>
+              <Field label="Profession du responsable"><input className={inputCls} value={form.professionResponsable} onChange={(e) => updateForm({ professionResponsable: e.target.value })} placeholder="Ex : Enseignant, Commerçant…" /></Field>
+              <Field label="Téléphone"><input className={inputCls} value={form.telephoneParent} onChange={(e) => updateForm({ telephoneParent: e.target.value })} placeholder="+243 8XX XXX XXX" /></Field>
+              <Field label="Adresse"><input className={inputCls} value={form.adresse} onChange={(e) => updateForm({ adresse: e.target.value })} placeholder="Av. In Mazaz, Q. Malela" /></Field>
             </div>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Affectation scolaire
-            </h2>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Affectation scolaire</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Field label="Niveau" required>
                 <select className={inputCls} value={form.niveau} onChange={(e) => handleNiveauChange(e.target.value as Niveau | '')}>
@@ -460,7 +409,7 @@ export default function ElevesPage() {
               <Field label={`Option ${besoinOption ? '*' : '(non applicable)'}`}>
                 <select className={inputCls} value={form.option} onChange={(e) => updateForm({ option: e.target.value })} disabled={!besoinOption}>
                   <option value="">{besoinOption ? '— Choisir une option —' : '— Aucune option requise —'}</option>
-                  {OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  {settings.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </Field>
               <Field label="Statut de l'élève">
@@ -468,12 +417,8 @@ export default function ElevesPage() {
                   {STUDENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
-              <Field label="Matricule (auto)">
-                <input className={inputCls} value={genererMatricule()} disabled />
-              </Field>
-              <Field label="Date d'inscription">
-                <input type="date" className={inputCls} value={form.dateInscription} onChange={(e) => updateForm({ dateInscription: e.target.value })} />
-              </Field>
+              <Field label="Matricule (auto)"><input className={inputCls} value={genererMatricule()} disabled /></Field>
+              <Field label="Date d'inscription"><input type="date" className={inputCls} value={form.dateInscription} onChange={(e) => updateForm({ dateInscription: e.target.value })} /></Field>
             </div>
           </div>
 
@@ -481,16 +426,14 @@ export default function ElevesPage() {
             <button type="button" onClick={() => setForm({ ...emptyForm, dateInscription: today() })} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Réinitialiser
             </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
-            >
+            <button type="submit" disabled={!activeYear} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:bg-slate-300">
               Enregistrer l&apos;inscription
             </button>
           </div>
         </form>
       )}
 
+      {/* ============ ONGLET RÉINSCRIPTION ============ */}
       {tab === 'reinscription' && (
         <ReinscriptionTab
           pastStudents={pastStudentsToReinscrire}
@@ -499,29 +442,20 @@ export default function ElevesPage() {
         />
       )}
 
+      {/* ============ MODALES ============ */}
       {statusEdit && (
-        <StatusModal
-          student={statusEdit}
-          onClose={() => setStatusEdit(null)}
-          onSave={(statut) => changerStatut(statusEdit.id, statut)}
-        />
+        <StatusModal student={statusEdit} onClose={() => setStatusEdit(null)} onSave={(statut) => changerStatut(statusEdit.id, statut)} />
       )}
 
       {detailStudent && (
-        <FicheEleveModal
-          student={detailStudent}
-          payments={payments}
-          tuition={tuition}
-          schoolName={settings.schoolName || 'BLIND SCHOOL'}
-          schoolLogo={settings.schoolLogo}
-          onClose={() => setDetailStudent(null)}
-        />
+        <FicheEleveModal student={detailStudent} payments={payments} settings={settings} onClose={() => setDetailStudent(null)} />
       )}
 
       {reinscriptionTarget && activeYear && (
         <ReinscriptionModal
           student={reinscriptionTarget}
           activeYear={activeYear}
+          classes={currentClasses}
           onClose={() => setReinscriptionTarget(null)}
           onConfirm={(nouveau) => {
             setStudents((list) => [nouveau, ...list]);
@@ -547,190 +481,77 @@ export default function ElevesPage() {
 }
 
 /* ============================================================
-   Onglet Réinscription
+   SOUS-COMPOSANTS
    ============================================================ */
-function ReinscriptionTab({
-  pastStudents, activeYear, onReinscrire,
-}: {
-  pastStudents: Student[];
-  activeYear: { id: string; label: string } | null;
-  onReinscrire: (s: Student) => void;
-}) {
+
+function ReinscriptionTab({ pastStudents, activeYear, onReinscrire }: any) {
   const [years] = useSchoolYears();
   const [search, setSearch] = useState('');
 
-  const filtered = useMemo(() => {
+  const filtered = pastStudents.filter((s: Student) => {
     const q = search.trim().toLowerCase();
-    if (!q) return pastStudents;
-    return pastStudents.filter((s) => {
-      const hay = `${s.nom} ${s.postnom} ${s.prenom} ${s.matricule}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [pastStudents, search]);
+    if (!q) return true;
+    return `${s.nom} ${s.postnom} ${s.prenom} ${s.matricule}`.toLowerCase().includes(q);
+  });
 
-  if (!activeYear) {
-    return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center text-amber-800">
-        <p className="mb-1 text-3xl">📅</p>
-        <p className="font-semibold">Aucune année scolaire active</p>
-        <p className="mt-1 text-sm">Créez une année scolaire dans Configuration pour pouvoir réinscrire des élèves.</p>
-      </div>
-    );
-  }
-
-  if (pastStudents.length === 0) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
-        <div className="mb-2 text-4xl">🔄</div>
-        <p className="font-medium text-slate-700">Aucun élève à réinscrire</p>
-        <p className="mt-1 text-sm">
-          Tous les élèves des années passées sont déjà inscrits dans l&apos;année <b>{activeYear.label}</b>.
-        </p>
-      </div>
-    );
-  }
+  if (!activeYear) return <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center text-amber-800"><p className="mb-1 text-3xl">📅</p><p className="font-semibold">Aucune année scolaire active</p></div>;
+  if (pastStudents.length === 0) return <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500"><div className="mb-2 text-4xl">🔄</div><p className="font-medium text-slate-700">Aucun élève à réinscrire</p></div>;
 
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        🎯 <b>{pastStudents.length} élève(s)</b> issu(s) d&apos;années précédentes peuvent être réinscrits en <b>{activeYear.label}</b>.
-        Le système propose automatiquement la classe suivante (ou le redoublement si l&apos;élève était redoublant).
+        🎯 <b>{pastStudents.length} élève(s)</b> peuvent être réinscrits en <b>{activeYear.label}</b>.
       </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="mb-4">
-          <input
-            className={inputCls}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher par nom, matricule..."
-          />
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4"><input className={inputCls} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher..." /></div>
+        <div className="-mx-2 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500"><th className="px-3 py-2">Matricule</th><th className="px-3 py-2">Nom complet</th><th className="px-3 py-2">Dernière classe</th><th className="px-3 py-2">Année</th><th className="px-3 py-2">Statut</th><th className="px-3 py-2"></th></tr></thead>
+            <tbody>
+              {filtered.map((s: Student) => {
+                const prevYear = years.find((y) => y.id === s.anneeScolaireId);
+                return (
+                  <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2 font-mono text-xs">{s.matricule}</td>
+                    <td className="px-3 py-2 font-medium">{s.nom} {s.postnom} {s.prenom}</td>
+                    <td className="px-3 py-2">{s.classe}{s.option ? ` • ${s.option}` : ''}</td>
+                    <td className="px-3 py-2 text-slate-600">{prevYear?.label || '—'}</td>
+                    <td className="px-3 py-2"><span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STUDENT_STATUS_COLORS[s.statut]}`}>{s.statut}</span></td>
+                    <td className="px-3 py-2 text-right"><button onClick={() => onReinscrire(s)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white">🔄 Réinscrire</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-
-        {filtered.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">Aucun élève ne correspond à la recherche.</p>
-        ) : (
-          <div className="-mx-2 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                  <th className="px-3 py-2 font-semibold">Matricule</th>
-                  <th className="px-3 py-2 font-semibold">Nom complet</th>
-                  <th className="px-3 py-2 font-semibold">Dernière classe</th>
-                  <th className="px-3 py-2 font-semibold">Année</th>
-                  <th className="px-3 py-2 font-semibold">Statut</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s) => {
-                  const prevYear = years.find((y) => y.id === s.anneeScolaireId);
-                  const statut = s.statut || 'Actif';
-                  return (
-                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-3 py-2 font-mono text-xs text-slate-500">{s.matricule}</td>
-                      <td className="px-3 py-2 font-medium">
-                        {s.nom} {s.postnom} {s.prenom}
-                      </td>
-                      <td className="px-3 py-2">{s.classe}{s.option ? ` • ${s.option}` : ''}</td>
-                      <td className="px-3 py-2 text-slate-600">{prevYear?.label || '—'}</td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STUDENT_STATUS_COLORS[statut]}`}>
-                          {statut}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => onReinscrire(s)}
-                          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
-                        >
-                          🔄 Réinscrire
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-/* ============================================================
-   Modal Réinscription
-   ============================================================ */
-function ReinscriptionModal({
-  student, activeYear, onClose, onConfirm,
-}: {
-  student: Student;
-  activeYear: { id: string; label: string };
-  onClose: () => void;
-  onConfirm: (s: Student) => void;
-}) {
+function ReinscriptionModal({ student, activeYear, classes, onClose, onConfirm }: any) {
   const [years] = useSchoolYears();
-
-  const suggested = useMemo(() => {
-    const wasRedoublant = student.statut === 'Redoublant';
-    if (wasRedoublant) {
-      return { classe: student.classe, niveau: student.niveau, action: 'redouble' as const };
-    }
-    const next = nextClass(student.classe);
-    if (!next) {
-      return { classe: '', niveau: '', action: 'fin-cycle' as const };
-    }
-    let newNiveau: Niveau | '' = '';
-    for (const [niv, classes] of Object.entries(CLASSES)) {
-      if (classes.includes(next)) { newNiveau = niv as Niveau; break; }
-    }
-    return { classe: next, niveau: newNiveau, action: 'passe' as const };
-  }, [student]);
-
-  const [niveau, setNiveau] = useState<Niveau | ''>(suggested.niveau as Niveau);
-  const [classe, setClasse] = useState(suggested.classe);
+  const [niveau, setNiveau] = useState<Niveau | ''>(student.niveau);
+  const [classe, setClasse] = useState(student.classe);
   const [option, setOption] = useState(student.option || '');
   const [statut, setStatut] = useState<StudentStatus>('Actif');
   const [error, setError] = useState('');
 
   const besoinOption = classe ? classeAvecOption(classe) : false;
-  const classesDispo = niveau ? CLASSES[niveau] : [];
+  const classesDispo = niveau ? classes[niveau] : [];
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    setError('');
-    if (!niveau || !classe) {
-      setError('Veuillez sélectionner un niveau et une classe.');
-      return;
-    }
-    if (classeAvecOption(classe) && !option) {
-      setError('Cette classe nécessite une option.');
-      return;
-    }
+    if (!niveau || !classe) { setError('Sélectionnez un niveau et une classe.'); return; }
+    if (classeAvecOption(classe) && !option) { setError('Cette classe nécessite une option.'); return; }
 
     const nouveau: Student = {
+      ...student,
       id: crypto.randomUUID(),
-      matricule: student.matricule,
-      nom: student.nom,
-      postnom: student.postnom,
-      prenom: student.prenom,
-      sexe: student.sexe,
-      dateNaissance: student.dateNaissance,
-      lieuNaissance: student.lieuNaissance,
-      nomParent: student.nomParent,
-      telephoneParent: student.telephoneParent,
-      adresse: student.adresse,
-      ecoleProvenance: student.ecoleProvenance || '',
-      professionResponsable: student.professionResponsable || '',
-      niveau,
-      classe,
-      option: classeAvecOption(classe) ? option : '',
+      niveau, classe, option: classeAvecOption(classe) ? option : '',
       dateInscription: new Date().toISOString().slice(0, 10),
-      statut,
-      anneeScolaireId: activeYear.id,
-      previousYearId: student.anneeScolaireId,
-      previousStudentId: student.id,
+      statut, anneeScolaireId: activeYear.id,
+      previousYearId: student.anneeScolaireId, previousStudentId: student.id,
     };
     onConfirm(nouveau);
   };
@@ -740,164 +561,53 @@ function ReinscriptionModal({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4" onClick={onClose}>
       <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-slate-200 bg-gradient-to-br from-indigo-50 to-purple-50 px-5 py-4">
-          <h3 className="font-semibold text-indigo-900">🔄 Réinscription</h3>
-          <p className="text-xs text-slate-600">
-            {student.nom} {student.postnom} {student.prenom}
-          </p>
-        </div>
-
+        <div className="border-b border-slate-200 bg-indigo-50 px-5 py-4"><h3 className="font-semibold text-indigo-900">🔄 Réinscription</h3><p className="text-xs text-slate-600">{student.nom} {student.prenom}</p></div>
         <div className="space-y-4 p-5">
           <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-xs">
-            <div>
-              <p className="text-slate-500">Matricule</p>
-              <p className="font-mono font-semibold">{student.matricule}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Année précédente</p>
-              <p className="font-semibold">{prevYearLabel}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Classe précédente</p>
-              <p className="font-semibold">{student.classe}{student.option ? ` • ${student.option}` : ''}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Statut précédent</p>
-              <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${STUDENT_STATUS_COLORS[student.statut]}`}>
-                {student.statut}
-              </span>
-            </div>
+            <div><p className="text-slate-500">Année précédente</p><p className="font-semibold">{prevYearLabel}</p></div>
+            <div><p className="text-slate-500">Classe précédente</p><p className="font-semibold">{student.classe}</p></div>
           </div>
-
-          <div className={`rounded-lg border p-3 text-sm ${
-            suggested.action === 'redouble'
-              ? 'border-amber-200 bg-amber-50 text-amber-800'
-              : suggested.action === 'passe'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                : 'border-red-200 bg-red-50 text-red-800'
-          }`}>
-            {suggested.action === 'redouble' && (
-              <p>🔄 <b>Redoublement détecté</b> — l&apos;élève reste en <b>{suggested.classe}</b>. Vous pouvez modifier ci-dessous.</p>
-            )}
-            {suggested.action === 'passe' && (
-              <p>✅ <b>Passage automatique</b> — l&apos;élève passe de <b>{student.classe}</b> à <b>{suggested.classe}</b>. Vous pouvez modifier ci-dessous.</p>
-            )}
-            {suggested.action === 'fin-cycle' && (
-              <p>🎓 <b>Fin de cycle détecté</b> — l&apos;élève a terminé sa dernière classe. Sélectionnez une option ci-dessous ou marquez-le <b>Diplômé</b>.</p>
-            )}
-          </div>
-
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Nouveau niveau" required>
-              <select
-                className={inputCls}
-                value={niveau}
-                onChange={(e) => {
-                  const n = e.target.value as Niveau | '';
-                  setNiveau(n);
-                  setClasse('');
-                  setOption('');
-                }}
-              >
-                <option value="">— Choisir —</option>
-                {NIVEAUX.map((n) => <option key={n} value={n}>{n}</option>)}
+              <select className={inputCls} value={niveau} onChange={(e) => { setNiveau(e.target.value as Niveau | ''); setClasse(''); setOption(''); }}>
+                <option value="">— Choisir —</option>{NIVEAUX.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </Field>
             <Field label="Nouvelle classe" required>
-              <select
-                className={inputCls}
-                value={classe}
-                onChange={(e) => {
-                  setClasse(e.target.value);
-                  if (!classeAvecOption(e.target.value)) setOption('');
-                }}
-                disabled={!niveau}
-              >
-                <option value="">— Choisir —</option>
-                {classesDispo.map((c) => <option key={c} value={c}>{c}</option>)}
+              <select className={inputCls} value={classe} onChange={(e) => { setClasse(e.target.value); if (!classeAvecOption(e.target.value)) setOption(''); }} disabled={!niveau}>
+                <option value="">— Choisir —</option>{classesDispo.map((c: string) => <option key={c} value={c}>{c}</option>)}
               </select>
             </Field>
-            <Field label={`Option ${besoinOption ? '*' : '(non applicable)'}`}>
-              <select
-                className={inputCls}
-                value={option}
-                onChange={(e) => setOption(e.target.value)}
-                disabled={!besoinOption}
-              >
+            <Field label="Option">
+              <select className={inputCls} value={option} onChange={(e) => setOption(e.target.value)} disabled={!besoinOption}>
                 <option value="">{besoinOption ? '— Choisir —' : '— Non applicable —'}</option>
-                {OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </Field>
             <Field label="Nouveau statut">
-              <select
-                className={inputCls}
-                value={statut}
-                onChange={(e) => setStatut(e.target.value as StudentStatus)}
-              >
-                {STUDENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <select className={inputCls} value={statut} onChange={(e) => setStatut(e.target.value as StudentStatus)}>{STUDENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             </Field>
           </div>
-
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {error}</div>
-          )}
-
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
-            💡 Une <b>nouvelle inscription</b> sera créée pour l&apos;année <b>{activeYear.label}</b>.
-            L&apos;historique de l&apos;année précédente est conservé.
-          </div>
+          {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">❌ {error}</div>}
         </div>
-
         <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
-          <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-            Annuler
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-          >
-            ✓ Valider la réinscription
-          </button>
+          <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">Annuler</button>
+          <button onClick={handleSubmit} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white">✓ Valider</button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ============================================================
-   Modal Statut
-   ============================================================ */
-function StatusModal({
-  student, onClose, onSave,
-}: {
-  student: Student;
-  onClose: () => void;
-  onSave: (statut: StudentStatus) => void;
-}) {
+function StatusModal({ student, onClose, onSave }: any) {
   const current = student.statut || 'Actif';
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-          <h3 className="font-semibold">Changer le statut</h3>
-          <p className="text-xs text-slate-500">
-            {student.nom} {student.postnom} {student.prenom} — {student.classe}
-          </p>
-        </div>
+        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3"><h3 className="font-semibold">Changer le statut</h3><p className="text-xs text-slate-500">{student.nom} {student.prenom}</p></div>
         <div className="space-y-2 p-5">
           {STUDENT_STATUSES.map((s) => (
-            <button
-              key={s}
-              onClick={() => onSave(s)}
-              className={`flex w-full items-center justify-between rounded-lg border-2 px-4 py-3 text-sm font-medium transition ${
-                current === s
-                  ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50/50'
-              }`}
-            >
-              <span>{s}</span>
-              {current === s && <span className="text-xs">✓ Actuel</span>}
+            <button key={s} onClick={() => onSave(s)} className={`flex w-full items-center justify-between rounded-lg border-2 px-4 py-3 text-sm font-medium transition ${current === s ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300'}`}>
+              <span>{s}</span>{current === s && <span className="text-xs">✓ Actuel</span>}
             </button>
           ))}
         </div>
@@ -906,27 +616,12 @@ function StatusModal({
   );
 }
 
-/* ============================================================
-   Modal Fiche élève
-   ============================================================ */
-function FicheEleveModal({
-  student, payments, tuition, schoolName, schoolLogo, onClose,
-}: {
-  student: Student;
-  payments: Payment[];
-  tuition: Record<string, number>;
-  schoolName: string;
-  schoolLogo: string;
-  onClose: () => void;
-}) {
-  const studentPayments = useMemo(
-    () => payments.filter((p) => p.studentId === student.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [payments, student.id],
-  );
-  const totalPaid = useMemo(() => getStudentTotalPaid(payments, student.id), [payments, student.id]);
-  const totalDue = tuition[student.niveau] || 0;
-  const balance = Math.max(totalDue - totalPaid, 0);
-  const status = getPaymentStatus(totalPaid, totalDue);
+function FicheEleveModal({ student, payments, settings, onClose }: any) {
+  const studentPayments = payments.filter((p: Payment) => p.studentId === student.id).sort((a: Payment, b: Payment) => b.createdAt.localeCompare(a.createdAt));
+  const totalPaid = getStudentTotalPaid(payments, student.id);
+  const studentDue = totalDue(settings.tranches, student.niveau, student.option);
+  const balance = Math.max(studentDue - totalPaid, 0);
+  const status = getPaymentStatus(totalPaid, studentDue);
   const statut = student.statut || 'Actif';
 
   const [ageText, setAgeText] = useState('');
@@ -945,223 +640,51 @@ function FicheEleveModal({
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4 print:bg-white print:p-0">
       <div className="max-h-[95vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl print:max-h-none print:max-w-none print:rounded-none print:shadow-none">
         <div className="flex justify-end gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3 print:hidden">
-          <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-            Fermer
-          </button>
-          <button onClick={() => window.print()} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-            🖨️ Imprimer la fiche
-          </button>
+          <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">Fermer</button>
+          <button onClick={() => window.print()} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white">🖨️ Imprimer</button>
         </div>
-
         <div className="fiche-print p-6">
           <div className="mb-5 flex items-center gap-4 border-b-2 border-slate-800 pb-4">
-            {schoolLogo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={schoolLogo} alt="Logo" className="h-16 w-16 rounded-xl object-cover" />
-            ) : (
-              <div className="grid h-16 w-16 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-lg font-bold text-white">
-                {schoolName.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">{schoolName}</h1>
-              <p className="text-sm text-slate-600">Fiche individuelle de l&apos;élève</p>
-            </div>
-            <div className="text-right">
-              <p className="font-mono text-xs text-slate-500">{student.matricule}</p>
-              <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STUDENT_STATUS_COLORS[statut]}`}>
-                {statut}
-              </span>
-            </div>
+            {settings.schoolLogo ? <img src={settings.schoolLogo} alt="Logo" className="h-16 w-16 rounded-xl object-cover" /> : <div className="grid h-16 w-16 place-items-center rounded-xl bg-indigo-600 text-lg font-bold text-white">{(settings.schoolName || 'BLIND SCHOOL').slice(0, 2).toUpperCase()}</div>}
+            <div className="flex-1"><h1 className="text-xl font-bold">{settings.schoolName || 'BLIND SCHOOL'}</h1><p className="text-sm text-slate-600">Fiche individuelle</p></div>
+            <div className="text-right"><p className="font-mono text-xs text-slate-500">{student.matricule}</p><span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STUDENT_STATUS_COLORS[statut]}`}>{statut}</span></div>
           </div>
-
           <Section title="👤 Identité de l'élève">
-            <Info label="Nom" value={student.nom} />
-            <Info label="Postnom" value={student.postnom || '—'} />
-            <Info label="Prénom" value={student.prenom} />
-            <Info label="Sexe" value={student.sexe === 'M' ? 'Masculin' : 'Féminin'} />
-            <Info label="Date de naissance" value={student.dateNaissance || '—'} />
-            <Info label="Lieu de naissance" value={student.lieuNaissance || '—'} />
-            <Info label="Âge" value={ageText || '—'} />
-            <Info label="École de provenance" value={student.ecoleProvenance || '—'} />
+            <Info label="Nom" value={student.nom} /><Info label="Postnom" value={student.postnom || '—'} /><Info label="Prénom" value={student.prenom} />
+            <Info label="Sexe" value={student.sexe === 'M' ? 'Masculin' : 'Féminin'} /><Info label="Date de naissance" value={student.dateNaissance || '—'} /><Info label="Âge" value={ageText || '—'} />
+            <Info label="Lieu de naissance" value={student.lieuNaissance || '—'} /><Info label="École de provenance" value={student.ecoleProvenance || '—'} />
           </Section>
-
           <Section title="👨‍👩‍👧 Parent / Tuteur">
-            <Info label="Nom complet" value={student.nomParent || '—'} />
-            <Info label="Profession" value={student.professionResponsable || '—'} />
-            <Info label="Téléphone" value={student.telephoneParent || '—'} />
-            <Info label="Adresse" value={student.adresse || '—'} span />
+            <Info label="Nom complet" value={student.nomParent || '—'} /><Info label="Profession" value={student.professionResponsable || '—'} />
+            <Info label="Téléphone" value={student.telephoneParent || '—'} /><Info label="Adresse" value={student.adresse || '—'} span />
           </Section>
-
           <Section title="🏫 Scolarité">
-            <Info label="Niveau" value={student.niveau} />
-            <Info label="Classe" value={student.classe} />
-            <Info label="Option" value={student.option || '—'} />
-            <Info label="Date d'inscription" value={student.dateInscription || '—'} />
+            <Info label="Niveau" value={student.niveau} /><Info label="Classe" value={student.classe} /><Info label="Option" value={student.option || '—'} />
           </Section>
-
           <div className="mb-5">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              💰 Situation financière
-            </h3>
-            <div className="grid grid-cols-3 gap-3">
-              <MoneyBox label="Total attendu" value={formatMoney(totalDue)} tone="slate" />
-              <MoneyBox label="Total payé" value={formatMoney(totalPaid)} tone="emerald" />
-              <MoneyBox label="Solde restant" value={formatMoney(balance)} tone="red" />
-            </div>
-            <div className="mt-2 text-center">
-              <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
-                status.color === 'emerald' ? 'bg-emerald-100 text-emerald-800'
-                : status.color === 'amber' ? 'bg-amber-100 text-amber-800'
-                : status.color === 'red' ? 'bg-red-100 text-red-800'
-                : 'bg-slate-100 text-slate-600'
-              }`}>
-                Statut paiement : {status.label}
-              </span>
-            </div>
+            <h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">💰 Situation financière</h3>
+            <div className="grid grid-cols-3 gap-3"><MoneyBox label="Total dû" value={formatMoney(studentDue)} tone="slate" /><MoneyBox label="Total payé" value={formatMoney(totalPaid)} tone="emerald" /><MoneyBox label="Solde" value={formatMoney(balance)} tone="red" /></div>
+            <div className="mt-2 text-center"><span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${status.color === 'emerald' ? 'bg-emerald-100 text-emerald-800' : status.color === 'amber' ? 'bg-amber-100 text-amber-800' : status.color === 'red' ? 'bg-red-100 text-red-800' : 'bg-slate-100'}`}>Statut : {status.label}</span></div>
           </div>
-
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              🧾 Historique des paiements ({studentPayments.length})
-            </h3>
-            {studentPayments.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 py-6 text-center text-sm text-slate-500">
-                Aucun paiement enregistré
-              </p>
-            ) : (
+            <h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">🧾 Paiements ({studentPayments.length})</h3>
+            {studentPayments.length === 0 ? <p className="rounded-lg border border-dashed bg-slate-50 py-4 text-center text-xs text-slate-500">Aucun paiement</p> : (
               <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-300 bg-slate-50">
-                    <th className="border border-slate-200 px-2 py-1.5 text-left font-semibold">N° Reçu</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left font-semibold">Date</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left font-semibold">Tranche</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-left font-semibold">Mode</th>
-                    <th className="border border-slate-200 px-2 py-1.5 text-right font-semibold">Montant</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {studentPayments.map((p) => (
-                    <tr key={p.id}>
-                      <td className="border border-slate-200 px-2 py-1.5 font-mono text-[11px] text-slate-600">{p.receiptNumber}</td>
-                      <td className="border border-slate-200 px-2 py-1.5">{p.date}</td>
-                      <td className="border border-slate-200 px-2 py-1.5">{p.tranche}</td>
-                      <td className="border border-slate-200 px-2 py-1.5 text-slate-600">{p.method}</td>
-                      <td className="border border-slate-200 px-2 py-1.5 text-right font-semibold text-emerald-700">+{formatMoney(p.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-100 font-bold">
-                    <td colSpan={4} className="border border-slate-200 px-2 py-1.5 text-right">Total payé</td>
-                    <td className="border border-slate-200 px-2 py-1.5 text-right text-emerald-800">{formatMoney(totalPaid)}</td>
-                  </tr>
-                </tfoot>
+                <thead><tr className="border-b-2 border-slate-300 bg-slate-50"><th className="border px-2 py-1.5 text-left">N°</th><th className="border px-2 py-1.5 text-left">Date</th><th className="border px-2 py-1.5 text-left">Tranche</th><th className="border px-2 py-1.5 text-right">Montant</th></tr></thead>
+                <tbody>{studentPayments.map((p: Payment) => (<tr key={p.id}><td className="border px-2 py-1.5 font-mono">{p.receiptNumber}</td><td className="border px-2 py-1.5">{p.date}</td><td className="border px-2 py-1.5">{p.tranche}</td><td className="border px-2 py-1.5 text-right text-emerald-700">+{formatMoney(p.amount)}</td></tr>))}</tbody>
               </table>
             )}
           </div>
-
-          <div className="mt-6 border-t border-slate-200 pt-3 text-center text-[10px] text-slate-400">
-            Fiche générée par {schoolName} — Document non contractuel
-          </div>
         </div>
       </div>
-
-      <style jsx global>{`
-        @media print {
-          @page { size: A4 portrait; margin: 10mm; }
-          html, body { margin: 0; padding: 0; background: #fff; }
-          body * { visibility: hidden; }
-          .fiche-print, .fiche-print * { visibility: visible; }
-          .fiche-print {
-            position: absolute; left: 0; top: 0;
-            width: 100%;
-            padding: 0 !important;
-          }
-          .fiche-print table { page-break-inside: auto; }
-          .fiche-print tr { page-break-inside: avoid; }
-        }
-      `}</style>
+      <style jsx global>{`@media print { @page { size: A4 portrait; margin: 10mm; } body * { visibility: hidden; } .fiche-print, .fiche-print * { visibility: visible; } .fiche-print { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; } }`}</style>
     </div>
   );
 }
 
-/* ============================================================
-   Petits composants
-   ============================================================ */
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="mb-4">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</h3>
-      <div className="grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border border-slate-200 bg-slate-50/50 p-3 sm:grid-cols-2">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Info({ label, value, span }: { label: string; value: string; span?: boolean }) {
-  return (
-    <div className={span ? 'sm:col-span-2' : ''}>
-      <p className="text-[11px] text-slate-500">{label}</p>
-      <p className="text-sm font-medium text-slate-800">{value}</p>
-    </div>
-  );
-}
-
-function MoneyBox({ label, value, tone }: { label: string; value: string; tone: 'slate' | 'emerald' | 'red' }) {
-  const tones: Record<string, string> = {
-    slate: 'from-slate-500 to-slate-600',
-    emerald: 'from-emerald-500 to-emerald-600',
-    red: 'from-red-500 to-red-600',
-  };
-  return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className={`h-1.5 bg-gradient-to-r ${tones[tone]}`} />
-      <div className="p-3">
-        <p className="text-[11px] text-slate-500">{label}</p>
-        <p className="mt-0.5 text-base font-bold">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-600">
-        {label} {required && <span className="text-red-500">*</span>}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button onClick={onClick} className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-medium transition ${
-      active ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-    }`}>
-      {children}
-    </button>
-  );
-}
-
-function StatCard({
-  label, value, accent,
-}: { label: string; value: number; accent: 'indigo' | 'emerald' | 'amber' | 'slate' | 'purple' }) {
-  const colors: Record<string, string> = {
-    indigo: 'from-indigo-500 to-indigo-600',
-    emerald: 'from-emerald-500 to-emerald-600',
-    amber: 'from-amber-500 to-amber-600',
-    slate: 'from-slate-400 to-slate-500',
-    purple: 'from-purple-500 to-purple-600',
-  };
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className={`mb-2 h-1.5 w-10 rounded-full bg-gradient-to-r ${colors[accent]}`} />
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold">{value}</p>
-    </div>
-  );
-}
+function Section({ title, children }: any) { return (<div className="mb-4"><h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">{title}</h3><div className="grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border bg-slate-50/50 p-3 sm:grid-cols-2">{children}</div></div>); }
+function Info({ label, value, span }: any) { return (<div className={span ? 'sm:col-span-2' : ''}><p className="text-[11px] text-slate-500">{label}</p><p className="text-sm font-medium">{value}</p></div>); }
+function MoneyBox({ label, value, tone }: any) { const tones: any = { slate: 'from-slate-500 to-slate-600', emerald: 'from-emerald-500 to-emerald-600', red: 'from-red-500 to-red-600' }; return (<div className="overflow-hidden rounded-xl border bg-white shadow-sm"><div className={`h-1.5 bg-gradient-to-r ${tones[tone]}`} /><div className="p-3"><p className="text-[11px] text-slate-500">{label}</p><p className="mt-0.5 text-base font-bold">{value}</p></div></div>); }
+function Field({ label, children, required }: any) { return (<label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">{label} {required && <span className="text-red-500">*</span>}</span>{children}</label>); }
+function TabBtn({ active, onClick, children }: any) { return (<button onClick={onClick} className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-medium transition ${active ? 'bg-indigo-600 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>{children}</button>); }
+function StatCard({ label, value, accent }: any) { const colors: any = { indigo: 'from-indigo-500 to-indigo-600', emerald: 'from-emerald-500 to-emerald-600', amber: 'from-amber-500 to-amber-600', slate: 'from-slate-400 to-slate-500', purple: 'from-purple-500 to-purple-600' }; return (<div className="rounded-2xl border bg-white p-4 shadow-sm"><div className={`mb-2 h-1.5 w-10 rounded-full bg-gradient-to-r ${colors[accent]}`} /><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></div>); }
