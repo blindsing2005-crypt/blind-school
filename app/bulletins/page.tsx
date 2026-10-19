@@ -38,6 +38,10 @@ const inputCls =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400';
 
 export default function BulletinsPage() {
+  const { currentUser } = useAuth();
+  const assignedClasses = currentUser?.assignedClasses || [];
+  const hasRestriction = assignedClasses.length > 0;
+
   const [students] = useStudents();
   const [templates, setTemplates] = useBulletinTemplates();
   const [grades, setGrades] = useGrades();
@@ -96,6 +100,8 @@ export default function BulletinsPage() {
           setConfig={setConfig}
           getTemplate={getTemplate}
           saveTemplate={saveTemplate}
+          assignedClasses={assignedClasses}
+          hasRestriction={hasRestriction}
         />
       )}
 
@@ -107,6 +113,8 @@ export default function BulletinsPage() {
           conduite={conduite}
           saveConduite={saveConduite}
           getTemplate={getTemplate}
+          assignedClasses={assignedClasses}
+          hasRestriction={hasRestriction}
         />
       )}
 
@@ -118,6 +126,8 @@ export default function BulletinsPage() {
           config={config}
           getTemplate={getTemplate}
           onPreview={setPreviewStudent}
+          assignedClasses={assignedClasses}
+          hasRestriction={hasRestriction}
         />
       )}
 
@@ -127,6 +137,8 @@ export default function BulletinsPage() {
           grades={grades}
           saveGrades={saveGrades}
           getTemplate={getTemplate}
+          assignedClasses={assignedClasses}
+          hasRestriction={hasRestriction}
         />
       )}
 
@@ -152,18 +164,24 @@ export default function BulletinsPage() {
    TAB 1 — MODÈLES
    ============================================================ */
 function ModelesTab({
-  config, setConfig, getTemplate, saveTemplate,
+  config, setConfig, getTemplate, saveTemplate, assignedClasses, hasRestriction,
 }: {
   config: BulletinConfig;
   setConfig: ReturnType<typeof useBulletinConfig>[1];
   getTemplate: (c: string, o: string) => BulletinTemplate | undefined;
   saveTemplate: (tpl: BulletinTemplate) => void;
+  assignedClasses: string[];
+  hasRestriction: boolean;
 }) {
   const [niveau, setNiveau] = useState<Niveau | ''>('');
   const [classe, setClasse] = useState('');
   const [option, setOption] = useState('');
 
-  const classesDispo = niveau ? CLASSES[niveau] : [];
+  const allClassesDispo = niveau ? CLASSES[niveau] : [];
+  const classesDispo = hasRestriction 
+    ? allClassesDispo.filter((c) => assignedClasses.includes(c))
+    : allClassesDispo;
+
   const besoinOption = classe ? classeAvecOption(classe) : false;
   const tpl = classe && (!besoinOption || option)
     ? getTemplate(classe, besoinOption ? option : '')
@@ -415,7 +433,7 @@ function ModelesTab({
    TAB 2 — SAISIE DES NOTES
    ============================================================ */
 function NotesTab({
-  students, grades, saveGrades, conduite, saveConduite, getTemplate,
+  students, grades, saveGrades, conduite, saveConduite, getTemplate, assignedClasses, hasRestriction,
 }: {
   students: Student[];
   grades: Grade[];
@@ -423,13 +441,19 @@ function NotesTab({
   conduite: ConduiteEntry[];
   saveConduite: (c: ConduiteEntry) => void;
   getTemplate: (c: string, o: string) => BulletinTemplate | undefined;
+  assignedClasses: string[];
+  hasRestriction: boolean;
 }) {
   const [niveau, setNiveau] = useState<Niveau | ''>('');
   const [classe, setClasse] = useState('');
   const [option, setOption] = useState('');
   const [periodKey, setPeriodKey] = useState('');
 
-  const classesDispo = niveau ? CLASSES[niveau] : [];
+  const allClassesDispo = niveau ? CLASSES[niveau] : [];
+  const classesDispo = hasRestriction 
+    ? allClassesDispo.filter((c) => assignedClasses.includes(c))
+    : allClassesDispo;
+
   const besoinOption = classe ? classeAvecOption(classe) : false;
   const tpl = classe && (!besoinOption || option)
     ? getTemplate(classe, besoinOption ? option : '')
@@ -609,7 +633,7 @@ function NotesTab({
    TAB 3 — BULLETINS
    ============================================================ */
 function BulletinsTab({
-  students, grades, conduite, config, getTemplate, onPreview,
+  students, grades, conduite, config, getTemplate, onPreview, assignedClasses, hasRestriction,
 }: {
   students: Student[];
   grades: Grade[];
@@ -617,12 +641,18 @@ function BulletinsTab({
   config: BulletinConfig;
   getTemplate: (c: string, o: string) => BulletinTemplate | undefined;
   onPreview: (s: Student) => void;
+  assignedClasses: string[];
+  hasRestriction: boolean;
 }) {
   const [niveau, setNiveau] = useState<Niveau | ''>('');
   const [classe, setClasse] = useState('');
   const [option, setOption] = useState('');
 
-  const classesDispo = niveau ? CLASSES[niveau] : [];
+  const allClassesDispo = niveau ? CLASSES[niveau] : [];
+  const classesDispo = hasRestriction 
+    ? allClassesDispo.filter((c) => assignedClasses.includes(c))
+    : allClassesDispo;
+
   const besoinOption = classe ? classeAvecOption(classe) : false;
   const tpl = classe && (!besoinOption || option)
     ? getTemplate(classe, besoinOption ? option : '')
@@ -721,36 +751,24 @@ function BulletinsTab({
 }
 
 /* ============================================================
-   TAB 4 — ESPACE ENSEIGNANT (avec classes assignées)
+   TAB 4 — ESPACE ENSEIGNANT
    ============================================================ */
 function TeacherTab({
-  students, grades, saveGrades, getTemplate,
+  students, grades, saveGrades, getTemplate, assignedClasses, hasRestriction,
 }: {
   students: Student[];
   grades: Grade[];
   saveGrades: (g: Grade[]) => void;
   getTemplate: (c: string, o: string) => BulletinTemplate | undefined;
+  assignedClasses: string[];
+  hasRestriction: boolean;
 }) {
-  const { currentUser } = useAuth();
   const [niveau, setNiveau] = useState<Niveau | ''>('');
   const [classe, setClasse] = useState('');
   const [option, setOption] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [periodKey, setPeriodKey] = useState('');
 
-  /** 🆕 Classes assignées à l'enseignant (vide = toutes) */
-  const assignedClasses = currentUser?.assignedClasses || [];
-  const hasRestriction = assignedClasses.length > 0;
-
-  /** 🆕 Vérifie si l'utilisateur peut accéder à une classe */
-  const canAccessClass = (c: string, opt?: string) => {
-    if (!hasRestriction) return true;
-    if (assignedClasses.includes(c)) return true;
-    if (opt && assignedClasses.includes(`${c} • ${opt}`)) return true;
-    return false;
-  };
-
-  /** 🆕 Niveaux autorisés selon les classes assignées */
   const allowedNiveaux = useMemo<Niveau[]>(() => {
     if (!hasRestriction) return [...NIVEAUX];
     const set = new Set<Niveau>();
@@ -764,7 +782,7 @@ function TeacherTab({
   }, [assignedClasses, hasRestriction]);
 
   const classesDispo = niveau
-    ? CLASSES[niveau].filter((c) => canAccessClass(c))
+    ? CLASSES[niveau].filter((c) => !hasRestriction || assignedClasses.includes(c))
     : [];
 
   const besoinOption = classe ? classeAvecOption(classe) : false;
@@ -803,13 +821,12 @@ function TeacherTab({
     }]);
   };
 
-  // Si enseignant avec restriction → pré-sélectionner la 1ère classe assignée
   useEffect(() => {
     if (!hasRestriction) return;
     if (classe) return;
     const firstNiveau = allowedNiveaux[0];
     if (!firstNiveau) return;
-    const classes = CLASSES[firstNiveau].filter((c) => canAccessClass(c));
+    const classes = CLASSES[firstNiveau].filter((c) => assignedClasses.includes(c));
     if (classes.length === 0) return;
     setNiveau(firstNiveau);
     setClasse(classes[0]);
