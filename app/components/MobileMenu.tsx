@@ -8,7 +8,7 @@ import { useLicense, computeStatus } from '../lib/license';
 import GlobalSearch from './GlobalSearch';
 
 const NAV: { href: string; label: string; icon: string; perm: Permission }[] = [
-  { href: '/', label: 'Tableau de bord', icon: '📊', perm: 'dashboard.view' },
+  { href: '/dashboard', label: 'Tableau de bord', icon: '📊', perm: 'dashboard.view' },
   { href: '/eleves', label: 'Élèves & Inscriptions', icon: '👥', perm: 'eleves.view' },
   { href: '/paiements', label: 'Paiements & Minerval', icon: '💳', perm: 'paiements.view' },
   { href: '/rapports', label: 'Rapports financiers', icon: '💰', perm: 'rapports.view' },

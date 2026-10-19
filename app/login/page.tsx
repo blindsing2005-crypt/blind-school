@@ -20,17 +20,15 @@ export default function LoginPage() {
   const [recoveryCode] = useRecoveryCode();
   const [, setSession] = useSession();
 
-  const [username, setUsername] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Modal de récupération
   const [showRecovery, setShowRecovery] = useState(false);
   const [recoveryTab, setRecoveryTab] = useState<'email' | 'code'>('email');
 
-  // État pour la récupération par Email
-  const [identifier, setIdentifier] = useState('');
+  const [resetId, setResetId] = useState('');
   const [emailStep, setEmailStep] = useState<'request' | 'verify' | 'newpwd' | 'done'>('request');
   const [foundUser, setFoundUser] = useState<UserAccount | null>(null);
   const [sentCode, setSentCode] = useState('');
@@ -39,7 +37,6 @@ export default function LoginPage() {
   const [emailPwd2, setEmailPwd2] = useState('');
   const [emailError, setEmailError] = useState('');
 
-  // État pour la récupération par Code de secours
   const [globalCode, setGlobalCode] = useState('');
   const [globalPwd, setGlobalPwd] = useState('');
   const [globalPwd2, setGlobalPwd2] = useState('');
@@ -51,28 +48,20 @@ export default function LoginPage() {
     setError('');
     setBusy(true);
     try {
-      const user = await verifyLogin(users, username, password);
+      const user = await verifyLogin(users, identifier, password);
       if (!user) {
-        setError('Identifiant ou mot de passe incorrect.');
+        setError('Identifiant, email ou mot de passe incorrect.');
         setBusy(false);
         return;
       }
       
-      // Mise à jour de la dernière connexion
       setUsers((list) => list.map((u) => u.id === user.id ? { ...u, lastLoginAt: new Date().toISOString() } : u));
-      
-      // Création de la session
-      setSession({ 
-        userId: user.id, 
-        username: user.username, 
-        fullName: user.fullName, 
-        role: user.role, 
-        loginAt: new Date().toISOString() 
-      });
+      setSession({ userId: user.id, username: user.username, fullName: user.fullName, role: user.role, loginAt: new Date().toISOString() });
 
-      // 🆕 REDIRECTION INTELLIGENTE SELON LES PERMISSIONS
+      // 🆕 Redirection vers le Dashboard ou le premier module autorisé
       const perms = getUserPermissions(user);
-      let target = '/';
+      let target = '/dashboard'; // Par défaut, on va sur le Dashboard (qui a remplacé la racine)
+      
       if (!perms.includes('dashboard.view')) {
         if (perms.includes('eleves.view')) target = '/eleves';
         else if (perms.includes('paiements.view')) target = '/paiements';
@@ -111,7 +100,7 @@ export default function LoginPage() {
 
   const handleEmailRequest = () => {
     setEmailError('');
-    const result = requestReset(users, identifier);
+    const result = requestReset(users, resetId);
     if ('error' in result) { setEmailError(result.error); return; }
     const { user, code } = result;
     setUsers((list) => list.map((u) => u.id === user.id ? { ...u, resetCode: code, resetCodeExpiry: new Date(Date.now() + 15 * 60 * 1000).toISOString() } : u));
@@ -141,7 +130,7 @@ export default function LoginPage() {
   const closeRecovery = () => {
     setShowRecovery(false);
     setGlobalCode(''); setGlobalPwd(''); setGlobalPwd2(''); setGlobalError(''); setGlobalStep('code');
-    setIdentifier(''); setEnteredCode(''); setEmailPwd(''); setEmailPwd2(''); setEmailError('');
+    setResetId(''); setEnteredCode(''); setEmailPwd(''); setEmailPwd2(''); setEmailError('');
     setFoundUser(null); setSentCode(''); setEmailStep('request');
     setRecoveryTab('email');
   };
@@ -149,22 +138,20 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-gradient-to-br from-indigo-50 via-slate-50 to-purple-50 p-4">
       <div className="w-full max-w-md">
-        {/* Logo et Titre */}
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 text-lg font-bold text-white shadow-lg">BS</div>
           <h1 className="text-2xl font-bold tracking-tight">BLIND SCHOOL</h1>
           <p className="text-sm text-slate-500">Connectez-vous pour continuer</p>
         </div>
 
-        {/* Formulaire de connexion */}
         <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
           {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800">❌ {error}</div>}
           
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-slate-600">Nom d&apos;utilisateur</span>
+            <span className="mb-1 block text-xs font-medium text-slate-600">Nom d&apos;utilisateur ou Email</span>
             <input 
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" 
-              value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required placeholder="ex : admin" 
+              value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoFocus required placeholder="ex : admin ou admin@ecole.cd" 
             />
           </label>
           
@@ -192,10 +179,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Info 1ère connexion */}
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
-          <p className="mb-1 font-semibold">🔑 Première connexion</p>
-          <p>Utilisateur : <b>admin</b> — Mot de passe : <b>admin123</b></p>
+        <div className="mt-4 text-center">
+          <button onClick={() => router.push('/')} className="text-xs text-slate-400 hover:underline">← Retour à l&apos;accueil</button>
         </div>
       </div>
 
@@ -227,7 +212,6 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {/* Onglet Email */}
             {recoveryTab === 'email' && (
               <div className="space-y-4 p-5">
                 {emailStep === 'request' && (
@@ -236,7 +220,7 @@ export default function LoginPage() {
                       <span className="mb-1 block text-xs font-medium text-slate-600">Identifiant ou email</span>
                       <input 
                         className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500" 
-                        value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoFocus 
+                        value={resetId} onChange={(e) => setResetId(e.target.value)} autoFocus 
                       />
                     </label>
                     {emailError && <div className="text-xs text-red-600">❌ {emailError}</div>}
@@ -283,7 +267,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Onglet Code de secours */}
             {recoveryTab === 'code' && (
               <div className="space-y-4 p-5">
                 {globalStep === 'code' && (

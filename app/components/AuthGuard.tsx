@@ -12,7 +12,8 @@ import {
 } from '../lib/auth';
 import { useLicense } from '../lib/license';
 
-const PUBLIC_ROUTES = ['/login', '/licence', '/super-admin'];
+// 🆕 La racine '/' et '/login' sont publiques. '/super-admin' aussi.
+const PUBLIC_ROUTES = ['/', '/login', '/licence', '/super-admin'];
 const USERS_KEY = 'blind-school-users';
 const RECOVERY_KEY = 'blind-school-recovery-code';
 
@@ -25,7 +26,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { status } = useLicense();
   const [ready, setReady] = useState(false);
 
-  // Initialisation de la base de données utilisateur au démarrage
+  // Initialisation
   useEffect(() => {
     let cancelled = false;
 
@@ -45,7 +46,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         if (raw) storedCode = JSON.parse(raw);
       } catch { /* ignore */ }
 
-      // Migration de sécurité au cas où il manque des champs aux anciens comptes
       if (storedUsers.length > 0) {
         const needsMigration = storedUsers.some(
           (u) => u.email === undefined || u.customPermissions === undefined || u.resetCode === undefined || u.assignedClasses === undefined,
@@ -64,29 +64,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Création de l'admin par défaut si aucun utilisateur n'existe
       if (storedUsers.length === 0) {
         const hash = await hashPassword('admin123');
         const admin: UserAccount = {
-          id: crypto.randomUUID(), 
-          username: 'admin', 
-          fullName: 'Administrateur', 
-          email: '', 
-          role: 'Administrateur', 
-          passwordHash: hash, 
-          active: true, 
-          createdAt: new Date().toISOString(), 
-          lastLoginAt: '', 
-          customPermissions: null, 
-          resetCode: null, 
-          resetCodeExpiry: null, 
-          assignedClasses: [],
+          id: crypto.randomUUID(), username: 'admin', fullName: 'Administrateur', email: 'admin@ecole.cd', role: 'Administrateur', passwordHash: hash, active: true, createdAt: new Date().toISOString(), lastLoginAt: '', customPermissions: null, resetCode: null, resetCodeExpiry: null, assignedClasses: [],
         };
         window.localStorage.setItem(USERS_KEY, JSON.stringify([admin]));
         if (!cancelled) setUsers([admin]);
       }
 
-      // Création du code de secours s'il n'existe pas
       if (!storedCode) {
         const code = generateRecoveryCode();
         window.localStorage.setItem(RECOVERY_KEY, JSON.stringify(code));
@@ -99,35 +85,32 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Gestion des redirections
+  // Redirections
   useEffect(() => {
     if (!ready || !status) return;
 
     const isPublic = PUBLIC_ROUTES.includes(path);
 
-    // 1. Licence expirée -> Forcer la page licence
     if (status.isExpired && path !== '/licence') {
       router.replace('/licence');
       return;
     }
 
-    // 2. Licence valide mais on est sur la page licence -> Retour accueil
     if (!status.isExpired && path === '/licence') {
-      router.replace('/');
+      router.replace('/dashboard'); // 🆕 Modifié
       return;
     }
 
     if (!status.isExpired) {
-      // 3. Pas connecté et tente d'accéder à une page privée -> Login
       if (!session && !isPublic) {
         router.replace('/login');
       } 
-      // 4. Connecté et sur la page login -> Accueil
+      // 🆕 Si connecté, on ne doit plus être sur /login ni sur la landing page / (optionnel)
       else if (session && path === '/login') {
-        router.replace('/');
+        router.replace('/dashboard'); // 🆕 Modifié
       } 
-      // 5. 🆕 REDIRECTION INTELLIGENTE SI ON EST SUR L'ACCUEIL MAIS PAS DE PERMISSION DASHBOARD
-      else if (session && path === '/') {
+      // 🆕 Redirection intelligente si on est sur le dashboard mais pas de permission
+      else if (session && path === '/dashboard') {
         const currentUser = users.find((u) => u.id === session.userId);
         if (currentUser) {
           const perms = getUserPermissions(currentUser);
@@ -145,7 +128,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [ready, status, session, path, router, users]);
 
-  // Écran de chargement pendant la vérification
   if (!ready || !status) {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-50">
@@ -157,7 +139,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Blocage visuel pendant la redirection
   if (status.isExpired && path !== '/licence') {
     return <div className="grid min-h-screen place-items-center bg-slate-50"><p className="text-sm text-slate-500">Licence expirée — redirection…</p></div>;
   }

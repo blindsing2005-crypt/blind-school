@@ -1,10 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-/* ============================================================
-   BLIND SCHOOL — Authentification & Rôles
-   ============================================================ */
-
 export const ROLES = ['Administrateur', 'Comptable', 'Enseignant', 'Secrétaire'] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -64,7 +60,7 @@ export interface UserAccount {
   customPermissions: Permission[] | null;
   resetCode: string | null;
   resetCodeExpiry: string | null;
-  assignedClasses: string[]; // 🆕 Classes autorisées pour l'enseignant
+  assignedClasses: string[];
 }
 
 export interface Session {
@@ -97,7 +93,6 @@ export function generateResetCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-/* ---------- Hook localStorage ---------- */
 function usePersistentState<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
   const [value, setValue] = useState<T>(initial);
   useEffect(() => {
@@ -137,15 +132,19 @@ export async function ensureDefaultAdmin(users: UserAccount[], recoveryCode: str
   if (users.length === 0) {
     const hash = await hashPassword('admin123');
     updatedUsers = [{
-      id: crypto.randomUUID(), username: 'admin', fullName: 'Administrateur', email: '', role: 'Administrateur', passwordHash: hash, active: true, createdAt: new Date().toISOString(), lastLoginAt: '', customPermissions: null, resetCode: null, resetCodeExpiry: null, assignedClasses: [],
+      id: crypto.randomUUID(), username: 'admin', fullName: 'Administrateur', email: 'admin@ecole.cd', role: 'Administrateur', passwordHash: hash, active: true, createdAt: new Date().toISOString(), lastLoginAt: '', customPermissions: null, resetCode: null, resetCodeExpiry: null, assignedClasses: [],
     }];
   }
   if (!recoveryCode) updatedCode = generateRecoveryCode();
   return { users: updatedUsers, recoveryCode: updatedCode };
 }
 
-export async function verifyLogin(users: UserAccount[], username: string, password: string): Promise<UserAccount | null> {
-  const user = users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+// 🆕 Connexion par Nom d'utilisateur OU Email
+export async function verifyLogin(users: UserAccount[], identifier: string, password: string): Promise<UserAccount | null> {
+  const clean = identifier.trim().toLowerCase();
+  const user = users.find(
+    (u) => u.username.toLowerCase() === clean || (u.email && u.email.toLowerCase() === clean)
+  );
   if (!user || !user.active) return null;
   const hash = await hashPassword(password);
   return hash === user.passwordHash ? user : null;
@@ -157,7 +156,6 @@ export function checkRecoveryCode(stored: string | null, entered: string): boole
   return clean(stored) === clean(entered);
 }
 
-// 🆕 Calcule les permissions exactes (en tenant compte des permissions personnalisées)
 export function getUserPermissions(user: UserAccount | null): Permission[] {
   if (!user) return [];
   if (user.role === 'Administrateur' && user.customPermissions === null) return ROLE_PERMISSIONS.Administrateur;
@@ -165,11 +163,9 @@ export function getUserPermissions(user: UserAccount | null): Permission[] {
   return ROLE_PERMISSIONS[user.role];
 }
 
-// 🆕 Hook principal
 export function useAuth() {
   const [session, setSession] = useSession();
   const [users] = useUsers();
-  
   const usersLoaded = users.length > 0;
   const currentUser = session && usersLoaded ? users.find((u) => u.id === session.userId) || null : null;
   const permissions = getUserPermissions(currentUser);
@@ -181,7 +177,7 @@ export function useAuth() {
     isAuthenticated: !!session,
     isLoading: !!session && !usersLoaded,
     can: (perm: Permission) => {
-      if (session && !usersLoaded) return true; // Sécurité anti-clignotement
+      if (session && !usersLoaded) return true;
       return permissions.includes(perm);
     },
     login: (s: Session) => setSession(s),
